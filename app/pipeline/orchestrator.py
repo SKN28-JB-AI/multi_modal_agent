@@ -193,7 +193,10 @@ class Orchestrator:
         if logo.exists():
             branded = job_dir / "merged_branded.mp4"
             await asyncio.to_thread(
-                postprocess.overlay_logo, current, logo, branded
+                postprocess.overlay_logo, current, logo, branded,
+                settings.logo_scale_ratio, settings.logo_opacity,
+                settings.logo_position, settings.logo_margin_ratio,
+                settings.logo_fade_in_sec,
             )
             current = branded
 
@@ -344,7 +347,10 @@ class Orchestrator:
         if logo_path is not None and logo_path.exists():
             branded = job_dir / "merged_branded.mp4"
             await asyncio.to_thread(
-                postprocess.overlay_logo, current, logo_path, branded
+                postprocess.overlay_logo, current, logo_path, branded,
+                settings.logo_scale_ratio, settings.logo_opacity,
+                settings.logo_position, settings.logo_margin_ratio,
+                settings.logo_fade_in_sec,
             )
             current = branded
 

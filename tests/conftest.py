@@ -131,6 +131,7 @@ def make_client(tmp_path, monkeypatch):
         kwargs = dict(
             app_keys=APP_KEY,
             data_dir=str(tmp_path / "data"),
+            logos_dir=str(tmp_path / "logos"),
             openai_api_key="sk-fake-for-tests",
             clip_retries=0,
             _env_file=None,
@@ -191,3 +192,13 @@ def make_sample_pdf(path: Path) -> None:
     page2.insert_text((72, 100), "Scene ideas: beach, close-up")
     doc.save(str(path))
     doc.close()
+
+
+def make_logo(path: Path) -> None:
+    """FFmpeg 로 64x64 단색 PNG 로고를 만든다."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=white:s=64x64:d=1",
+         "-frames:v", "1", str(path)],
+        check=True, capture_output=True,
+    )

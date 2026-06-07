@@ -22,6 +22,7 @@ from pydantic import ValidationError
 
 from ..backends import BackendNotConfigured, available_models, get_backend
 from ..pipeline.orchestrator import Orchestrator
+from .logos import resolve_logo
 from ..schemas import JobCreatedResponse, MessageRequest, PdfJobOptions
 from ..security import require_app_key
 
@@ -118,6 +119,9 @@ async def create_pdf_job(
     if len(pdf_bytes) > MAX_PDF_BYTES:
         raise HTTPException(status_code=413, detail="PDF 가 30MB 를 초과합니다.")
 
+    # logo_name 사전 검증(잘못된 이름이면 잡을 만들기 전에 422)
+    server_logo = resolve_logo(Path(settings.logos_dir), opts.logo_name)
+
     manager = request.app.state.job_manager
     orchestrator: Orchestrator = request.app.state.orchestrator
 
@@ -129,6 +133,7 @@ async def create_pdf_job(
     pdf_path = job_dir / "input.pdf"
     pdf_path.write_bytes(pdf_bytes)
 
+    # 로고 결정 — 우선순위: ① 업로드 ② options.logo_name ③ logos/ 기본 로고
     logo_path: Optional[Path] = None
     if logo is not None:
         logo_bytes = await logo.read()
@@ -137,6 +142,10 @@ async def create_pdf_job(
         if logo_bytes:
             logo_path = job_dir / "logo.png"
             logo_path.write_bytes(logo_bytes)
+    if logo_path is None and server_logo is not None:
+        # 서버 logos/ 폴더에서 선택된 로고를 잡 디렉터리로 복사
+        logo_path = job_dir / "logo.png"
+        logo_path.write_bytes(server_logo.read_bytes())
 
     manager.start(
         job, lambda: orchestrator.run_pdf_job(job, pdf_path, opts, logo_path)

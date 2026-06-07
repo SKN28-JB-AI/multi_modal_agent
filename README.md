@@ -92,6 +92,19 @@ curl -X POST localhost:8000/v1/jobs/{job_id}/remix \
 | `language` | ko | 카피·내레이션 언어 |
 | `enable_narration` | false | OpenAI TTS 내레이션 합성 |
 | `burn_subtitles` | false | SRT 를 영상에 굽기(재인코딩) |
+| `logo_name` | 없음 | 서버 `logos/` 폴더의 로고 파일명 |
+
+### 로고 적용 규칙 (PDF 모드)
+
+서버의 `logos/` 폴더에 브랜드 로고(png/jpg/webp)를 넣어두면 광고 영상에
+항상 로고가 오버레이된다. 우선순위:
+
+1. 요청 multipart 의 `logo` 업로드 (일회성)
+2. `options.logo_name` 으로 지정한 파일 (`GET /v1/logos` 로 목록 조회)
+3. `logos/default.png`
+4. `logos/` 의 첫 파일(이름순)
+
+폴더가 비어 있고 업로드도 없으면 로고 없이 진행한다.
 
 ## 설계 결정 (주의점 대응)
 

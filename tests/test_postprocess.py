@@ -93,3 +93,46 @@ def test_overlay_logo(tmp_path):
     out = tmp_path / "branded.mp4"
     postprocess.overlay_logo(video, logo, out)
     assert out.exists() and out.stat().st_size > 0
+
+
+def test_overlay_logo_scaled_and_translucent(tmp_path):
+    """로고가 영상 폭 비율로 축소되고 반투명·여백이 적용되는지 픽셀 검증."""
+    video = tmp_path / "v.mp4"
+    make_test_clip(video, 2.0, "black")            # 검은 배경 320x180
+    logo = tmp_path / "logo.png"
+    subprocess.run(
+        ["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=white:s=200x200:d=1",
+         "-frames:v", "1", str(logo)],
+        check=True, capture_output=True,
+    )
+    out = tmp_path / "branded.mp4"
+    postprocess.overlay_logo(
+        video, logo, out,
+        scale_ratio=0.2, opacity=0.5, position="top-right",
+        margin_ratio=0.05, fade_in_sec=0.0,
+    )
+    # 마지막 프레임 추출 후 픽셀 검사
+    frame = tmp_path / "frame.png"
+    subprocess.run(
+        ["ffmpeg", "-y", "-sseof", "-0.1", "-i", str(out),
+         "-frames:v", "1", str(frame)],
+        check=True, capture_output=True,
+    )
+    try:
+        from PIL import Image
+    except ImportError:
+        import pytest
+        pytest.skip("Pillow 없음")
+
+    img = Image.open(frame).convert("RGB")
+    w, h = img.size                      # 320x180
+    margin = int(w * 0.05)               # 16px
+    logo_w = int(w * 0.2)                # 64px
+    # 로고 중앙부(우상단): 반투명 흰색 → 회색(~128). 0.5 투명도 검증
+    cx = w - margin - logo_w // 2
+    cy = margin + logo_w // 2
+    r, g, b = img.getpixel((cx, cy))
+    assert 90 < r < 180, f"로고 영역 밝기 이상(불투명 적용 안 됨?): {r}"
+    # 영상 중앙(로고 밖)은 그대로 검정
+    r2, g2, b2 = img.getpixel((w // 2, h - 10))
+    assert r2 < 30, f"로고 밖 영역 오염: {r2}"

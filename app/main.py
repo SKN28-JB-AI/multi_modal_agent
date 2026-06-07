@@ -20,6 +20,7 @@ from .config import Settings
 from .jobs import JobManager
 from .pipeline.orchestrator import Orchestrator
 from .routers import jobs as jobs_router
+from .routers import logos as logos_router
 from .routers import models as models_router
 from .routers import videos as videos_router
 
@@ -58,6 +59,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     app.include_router(videos_router.router)
     app.include_router(jobs_router.router)
     app.include_router(models_router.router)
+    app.include_router(logos_router.router)
 
     @app.get("/health", tags=["health"])
     async def health():

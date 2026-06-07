@@ -196,14 +196,76 @@ def mix_narration(video_path: Path, narration_path: Path,
 # ---------------------------------------------------------------------- #
 # 로고 오버레이 (선택)
 # ---------------------------------------------------------------------- #
-def overlay_logo(video_path: Path, logo_path: Path, output_path: Path,
-                 margin: int = 40) -> None:
-    """로고 PNG 를 우상단에 오버레이한다(재인코딩 발생)."""
+def _video_width(video_path: Path) -> int:
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        return 1920
+    proc = subprocess.run(
+        [ffprobe, "-v", "error", "-select_streams", "v:0",
+         "-show_entries", "stream=width",
+         "-of", "default=noprint_wrappers=1:nokey=1", str(video_path)],
+        capture_output=True, text=True,
+    )
+    try:
+        return int(proc.stdout.strip().splitlines()[0])
+    except (ValueError, IndexError):
+        return 1920
+
+
+# 위치 → overlay 좌표식 매핑 (m = 여백 px)
+_POSITIONS = {
+    "top-right": ("W-w-{m}", "{m}"),
+    "top-left": ("{m}", "{m}"),
+    "bottom-right": ("W-w-{m}", "H-h-{m}"),
+    "bottom-left": ("{m}", "H-h-{m}"),
+}
+
+
+def overlay_logo(
+    video_path: Path,
+    logo_path: Path,
+    output_path: Path,
+    scale_ratio: float = 0.12,
+    opacity: float = 0.82,
+    position: str = "top-right",
+    margin_ratio: float = 0.03,
+    fade_in_sec: float = 0.6,
+) -> None:
+    """
+    로고를 방송 워터마크처럼 자연스럽게 오버레이한다(재인코딩 발생).
+
+    - scale_ratio  : 로고 가로폭을 영상 가로폭의 비율로 자동 축소
+    - opacity      : 반투명 처리(0~1)로 영상 위에 떠 보이지 않게
+    - position     : top-right / top-left / bottom-right / bottom-left
+    - margin_ratio : 가장자리 여백(영상 가로폭 비율)
+    - fade_in_sec  : 시작 시 부드럽게 나타나는 페이드인
+    """
     ffmpeg = _ffmpeg()
+    vw = _video_width(video_path)
+    logo_w = max(32, int(vw * scale_ratio))
+    margin = max(8, int(vw * margin_ratio))
+    opacity = min(max(opacity, 0.0), 1.0)
+
+    x_expr, y_expr = _POSITIONS.get(position, _POSITIONS["top-right"])
+    x = x_expr.format(m=margin)
+    y = y_expr.format(m=margin)
+
+    logo_chain = (
+        f"[1:v]scale={logo_w}:-1,format=rgba,"
+        f"colorchannelmixer=aa={opacity:.2f}"
+    )
+    if fade_in_sec > 0:
+        logo_chain += f",fade=t=in:st=0:d={fade_in_sec:.2f}:alpha=1"
+    filter_complex = (
+        f"{logo_chain}[lg];[0:v][lg]overlay={x}:{y}:shortest=1[v]"
+    )
+
     _run(
         [
-            ffmpeg, "-y", "-i", str(video_path), "-i", str(logo_path),
-            "-filter_complex", f"[0:v][1:v]overlay=W-w-{margin}:{margin}[v]",
+            ffmpeg, "-y",
+            "-i", str(video_path),
+            "-loop", "1", "-i", str(logo_path),   # 페이드인을 위해 루프 입력
+            "-filter_complex", filter_complex,
             "-map", "[v]", "-map", "0:a?",
             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "copy",
             str(output_path),

@@ -75,6 +75,13 @@ class PdfJobOptions(GenerationOptions):
     burn_subtitles: bool = Field(
         default=False, description="SRT 자막을 영상에 굽기(재인코딩 발생)"
     )
+    logo_name: Optional[str] = Field(
+        default=None,
+        description=(
+            "서버 logos/ 폴더의 로고 파일명 (GET /v1/logos 로 조회). "
+            "미지정 시 default.png 또는 첫 파일이 자동 적용된다."
+        ),
+    )
 
 
 class RemixRequest(BaseModel):
