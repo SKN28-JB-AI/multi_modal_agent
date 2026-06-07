@@ -1,0 +1,13 @@
+# 환경 변수 (키 포함 — 커밋 금지)
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# 생성 산출물 (잡 데이터 / 클립 / 최종본)
+data/

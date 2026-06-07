@@ -1,0 +1,10 @@
+# multi_modal_agent — 멀티모달 동영상 생성 백엔드
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.7.0
+pydantic-settings>=2.3.0
+python-multipart>=0.0.9      # multipart 업로드(PDF/로고)
+httpx>=0.27.0                # fal.ai 호출 + 테스트 클라이언트
+openai>=1.50.0               # Sora 2 + LLM(파싱/스토리보드) + TTS
+google-genai>=1.0.0          # Veo 3.1 (Gemini API)
+PyMuPDF>=1.24.0              # PDF 텍스트/페이지 이미지 추출

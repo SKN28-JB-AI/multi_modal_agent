@@ -1,0 +1,119 @@
+"""
+schemas.py
+----------
+API 요청/응답 및 스토리보드 데이터 모델 (Pydantic v2).
+
+[스토리보드]
+PDF 기획서 모드의 ② 단계 산출물. LLM 이 이 스키마에 맞는 JSON 을
+생성하고, 파이프라인은 scenes 를 순서대로 비디오 백엔드에 넘긴다.
+- scene.prompt        : 영상 생성 프롬프트(영어 권장 — 모델 성능이 가장 좋음)
+- scene.on_screen_text: 화면 카피/자막(원문 언어). 생성 모델은 텍스트
+                        렌더링이 약하므로 영상에 넣지 않고 SRT 로 뽑는다.
+- narration_script    : 내레이션 대본(옵션 TTS 합성에 사용)
+"""
+
+from __future__ import annotations
+
+from typing import Literal, Optional
+
+from pydantic import BaseModel, Field
+
+AspectRatio = Literal["16:9", "9:16"]
+Resolution = Literal["720p", "1080p"]
+
+
+# ---------------------------------------------------------------------- #
+# 스토리보드
+# ---------------------------------------------------------------------- #
+class Scene(BaseModel):
+    index: int = Field(ge=0)
+    prompt: str = Field(min_length=1, description="영상 생성 프롬프트(영어 권장)")
+    duration_sec: float = Field(default=6.0, ge=2.0, le=20.0)
+    audio_description: str = Field(default="", description="효과음/배경음 묘사")
+    on_screen_text: str = Field(default="", description="화면 카피(후처리 자막용)")
+
+
+class Storyboard(BaseModel):
+    title: str = ""
+    summary: str = ""
+    target_audience: str = ""
+    narration_script: str = Field(default="", description="내레이션 대본(전체)")
+    scenes: list[Scene] = Field(min_length=1, max_length=12)
+
+
+# ---------------------------------------------------------------------- #
+# 요청
+# ---------------------------------------------------------------------- #
+class GenerationOptions(BaseModel):
+    """두 모드 공통의 영상 생성 옵션."""
+
+    aspect_ratio: AspectRatio = "16:9"
+    resolution: Resolution = "1080p"
+    generate_audio: bool = True
+
+
+class MessageRequest(GenerationOptions):
+    """메시지(단일 프롬프트) 모드 요청."""
+
+    prompt: str = Field(min_length=1, max_length=4000)
+    model: str = Field(description="사용할 비디오 백엔드 이름 (GET /v1/models 참고)")
+    duration_sec: Optional[float] = Field(
+        default=None, ge=2.0, le=20.0,
+        description="클립 길이(초). 백엔드 지원 값으로 자동 보정됨",
+    )
+
+
+class PdfJobOptions(GenerationOptions):
+    """PDF 기획서 모드 옵션 (multipart 의 options 필드, JSON 문자열)."""
+
+    target_total_duration_sec: float = Field(default=24.0, ge=4.0, le=120.0)
+    max_scenes: int = Field(default=4, ge=1, le=8)
+    language: str = Field(default="ko", description="카피/내레이션 언어")
+    enable_narration: bool = Field(
+        default=False, description="OpenAI TTS 로 내레이션 합성 (OPENAI_API_KEY 필요)"
+    )
+    burn_subtitles: bool = Field(
+        default=False, description="SRT 자막을 영상에 굽기(재인코딩 발생)"
+    )
+
+
+# ---------------------------------------------------------------------- #
+# 응답
+# ---------------------------------------------------------------------- #
+class JobCreatedResponse(BaseModel):
+    job_id: str
+    status: str
+    detail: str = "잡이 생성되었습니다. GET /v1/jobs/{job_id} 로 상태를 조회하세요."
+
+
+class SceneStateOut(BaseModel):
+    index: int
+    status: str
+    error: Optional[str] = None
+
+
+class JobStatusResponse(BaseModel):
+    job_id: str
+    mode: str
+    model: str
+    status: str
+    progress: float = Field(ge=0.0, le=1.0)
+    error: Optional[str] = None
+    storyboard: Optional[Storyboard] = None
+    scenes: list[SceneStateOut] = []
+    video_url: Optional[str] = None     # 완료 시 다운로드 경로
+    subtitles_url: Optional[str] = None # SRT 가 생성된 경우
+    created_at: str
+    updated_at: str
+
+
+class BackendInfo(BaseModel):
+    name: str
+    provider: str
+    description: str
+    configured: bool          # 필요한 API 키가 설정되어 있는지
+    supported_durations: list[float]
+
+
+class ModelsResponse(BaseModel):
+    models: list[BackendInfo]
