@@ -53,6 +53,8 @@ class Job(BaseModel):
     scenes: list[SceneState] = Field(default_factory=list)
     final_path: Optional[str] = None
     subtitles_path: Optional[str] = None
+    # 스토리보드 씬별 실제(또는 스케일된) 길이 — SRT/remix 재계산용
+    scene_durations: Optional[list[float]] = None
     request: dict = Field(default_factory=dict)   # 원 요청 기록(감사/디버깅)
     created_at: str = Field(default_factory=_now)
     updated_at: str = Field(default_factory=_now)

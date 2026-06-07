@@ -52,11 +52,15 @@ class MockBackend(VideoBackend):
     supported_durations = (2.0,)
     supports_remix = True
 
+    # 테스트에서 전달된 프롬프트를 검증할 수 있도록 캐처
+    captured_prompts: list = []
+
     @classmethod
     def is_configured(cls, settings: Settings) -> bool:
         return True
 
     async def generate_clip(self, spec: ClipSpec, out_path: Path) -> ClipResult:
+        MockBackend.captured_prompts.append(spec.prompt)
         await asyncio.to_thread(make_test_clip, out_path, 2.0)
         return ClipResult(
             path=out_path, duration_sec=2.0,
@@ -100,12 +104,14 @@ class FakeLLM:
     ) -> Storyboard:
         return Storyboard(
             title="테스트 광고",
-            narration_script="시원한 하루를 시작하세요.",
+            narration_script="시원한 하루를 시작하세요. 지금 만나보세요.",
             scenes=[
                 Scene(index=0, prompt="sunny beach, product splash",
-                      duration_sec=4, on_screen_text="시원한 한 모금"),
+                      duration_sec=4, narration="시원한 하루를 시작하세요.",
+                      on_screen_text="시원한 한 모금"),
                 Scene(index=1, prompt="product close-up, soft light",
-                      duration_sec=4, on_screen_text="지금 만나보세요"),
+                      duration_sec=4, narration="지금 만나보세요.",
+                      on_screen_text="지금 만나보세요"),
             ],
         )
 
@@ -121,6 +127,7 @@ def make_client(tmp_path, monkeypatch):
     clients: list[TestClient] = []
 
     def _make(**overrides) -> TestClient:
+        MockBackend.captured_prompts = []
         backends.register("mock", MockBackend)
         backends.register("mock-fail", FailingBackend)
         backends.register("mock-noremix", NoRemixBackend)

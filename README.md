@@ -86,6 +86,7 @@ curl -X POST localhost:8000/v1/jobs/{job_id}/remix \
 
 | 키 | 기본 | 설명 |
 |---|---|---|
+| `generation_mode` | single | **single**: 샷 타임라인 프롬프트로 1회 생성(백엔드 최대 길이로 보정: Sora 12s/Veo 8s/LTX 10~20s). **scenes**: 씬별 생성 후 결합(긴 광고용) |
 | `target_total_duration_sec` | 24 | 목표 총 길이(씬 합계 기준) |
 | `max_scenes` | 4 | 최대 씬 수(비용 가드, 1~8) |
 | `aspect_ratio` / `resolution` | 16:9 / 1080p | 백엔드 지원 값으로 자동 보정 |

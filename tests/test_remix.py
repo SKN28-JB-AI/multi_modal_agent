@@ -39,7 +39,7 @@ def test_remix_pdf_job_scene(client, tmp_path):
     resp = client.post(
         "/v1/videos/pdf",
         files={"file": ("plan.pdf", pdf.read_bytes(), "application/pdf")},
-        data={"model": "mock"},
+        data={"model": "mock", "options": '{"generation_mode": "scenes"}'},
         headers=auth_headers(),
     )
     source = wait_for_job(client, resp.json()["job_id"])

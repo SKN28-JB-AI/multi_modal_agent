@@ -46,7 +46,8 @@ def test_pdf_mode_end_to_end(client, tmp_path):
         "/v1/videos/pdf",
         files={"file": ("plan.pdf", pdf.read_bytes(), "application/pdf")},
         data={"model": "mock",
-              "options": '{"target_total_duration_sec": 8, "max_scenes": 2}'},
+              "options": '{"target_total_duration_sec": 8, "max_scenes": 2, '
+                         '"generation_mode": "scenes"}'},
         headers=auth_headers(),
     )
     assert resp.status_code == 202, resp.text

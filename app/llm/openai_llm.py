@@ -56,6 +56,13 @@ AI 영상 생성 모델용 스토리보드를 JSON 으로 작성하세요.
 5. narration_script 는 {language} 로, 전체 영상 길이에 맞는 분량으로.
 6. 씬 간 비주얼 연속성을 위해 공통 스타일 키워드를 모든 prompt 에
    반복하세요(색감, 렌즈, 톤).
+7. **내레이션 분배(중요)**: narration_script 를 씬별로 나눠 각 씬의
+   narration 필드에 배치하세요. 씬의 narration 은 비디오 모델이
+   보이스오버로 **직접 발화**하므로 반드시 채워야 합니다.
+   - {language} 로, 씬당 한 문장.
+   - 발화 가능 분량 엄수: 6초 씬 기준 15자 내외(초당 2~3자).
+     길면 잘리거나 뭉개집니다.
+   - 브리프에 내레이션/카피 제안이 있으면 그것을 우선 사용해 분배하세요.
 
 반드시 아래 구조의 JSON 객체만 출력하세요:
 {{
@@ -63,7 +70,8 @@ AI 영상 생성 모델용 스토리보드를 JSON 으로 작성하세요.
   "narration_script": "...",
   "scenes": [
     {{"index": 0, "prompt": "...", "duration_sec": 6,
-      "audio_description": "...", "on_screen_text": "..."}}
+      "audio_description": "...", "narration": "...",
+      "on_screen_text": "..."}}
   ]
 }}"""
 

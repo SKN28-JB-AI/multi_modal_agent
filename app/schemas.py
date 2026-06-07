@@ -30,6 +30,13 @@ class Scene(BaseModel):
     prompt: str = Field(min_length=1, description="영상 생성 프롬프트(영어 권장)")
     duration_sec: float = Field(default=6.0, ge=2.0, le=20.0)
     audio_description: str = Field(default="", description="효과음/배경음 묘사")
+    narration: str = Field(
+        default="",
+        description=(
+            "이 씬에서 발화될 내레이션/대사 한 문장(원문 언어). "
+            "비디오 모델이 보이스오버로 직접 발화한다."
+        ),
+    )
     on_screen_text: str = Field(default="", description="화면 카피(후처리 자막용)")
 
 
@@ -66,6 +73,14 @@ class MessageRequest(GenerationOptions):
 class PdfJobOptions(GenerationOptions):
     """PDF 기획서 모드 옵션 (multipart 의 options 필드, JSON 문자열)."""
 
+    generation_mode: Literal["single", "scenes"] = Field(
+        default="single",
+        description=(
+            "single: 스토리보드를 샷 타임라인 프롬프트로 합성해 한 번의 "
+            "생성 요청으로 영상 1개 생성(백엔드 최대 길이로 보정됨). "
+            "scenes: 씬별 클립 생성 후 FFmpeg 결합(긴 광고용)."
+        ),
+    )
     target_total_duration_sec: float = Field(default=24.0, ge=4.0, le=120.0)
     max_scenes: int = Field(default=4, ge=1, le=8)
     language: str = Field(default="ko", description="카피/내레이션 언어")
