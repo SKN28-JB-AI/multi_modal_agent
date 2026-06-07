@@ -34,6 +34,8 @@ class SceneState(BaseModel):
     status: str = "pending"             # pending / generating / completed / failed
     clip_path: Optional[str] = None
     error: Optional[str] = None
+    # 백엔드 측 비디오 ID (Sora video_id 등). remix 시 원본 참조로 사용.
+    backend_job_id: Optional[str] = None
 
 
 def _now() -> str:

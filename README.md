@@ -73,6 +73,13 @@ curl -X POST localhost:8000/v1/videos/pdf \
 curl -H "X-App-Key: ..." localhost:8000/v1/jobs/{job_id}
 curl -H "X-App-Key: ..." -o ad.mp4 localhost:8000/v1/jobs/{job_id}/video
 curl -H "X-App-Key: ..." -o ad.srt localhost:8000/v1/jobs/{job_id}/subtitles
+
+# remix — 완료된 잡의 특정 씬을 프롬프트로 부분 수정 (현재 sora-2 / sora-2-pro 지원)
+# 새 잡(mode="remix")이 생성되고, 수정된 씬 + 나머지 원본 씬을 재결합한다.
+# 원본 잡의 내레이션/로고도 자동 재적용.
+curl -X POST localhost:8000/v1/jobs/{job_id}/remix \
+  -H "X-App-Key: ..." -H "Content-Type: application/json" \
+  -d '{"prompt": "배경을 밤 도시로, 비 내리는 분위기", "scene_index": 1}'
 ```
 
 ### PDF 모드 옵션 (`options` JSON)

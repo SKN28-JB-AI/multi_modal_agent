@@ -50,6 +50,7 @@ class MockBackend(VideoBackend):
     provider = "test"
     description = "테스트용 mock 백엔드"
     supported_durations = (2.0,)
+    supports_remix = True
 
     @classmethod
     def is_configured(cls, settings: Settings) -> bool:
@@ -57,7 +58,26 @@ class MockBackend(VideoBackend):
 
     async def generate_clip(self, spec: ClipSpec, out_path: Path) -> ClipResult:
         await asyncio.to_thread(make_test_clip, out_path, 2.0)
-        return ClipResult(path=out_path, duration_sec=2.0, meta={"mock": True})
+        return ClipResult(
+            path=out_path, duration_sec=2.0,
+            meta={"mock": True, "backend_job_id": f"mock-video-{spec.index}"},
+        )
+
+    async def remix_clip(
+        self, source_video_id: str, prompt: str, out_path: Path
+    ) -> ClipResult:
+        # remix 결과는 파란색 클립으로 구분
+        await asyncio.to_thread(make_test_clip, out_path, 2.0, "blue")
+        return ClipResult(
+            path=out_path, duration_sec=2.0,
+            meta={"backend_job_id": "mock-remixed",
+                  "remixed_from": source_video_id},
+        )
+
+
+class NoRemixBackend(MockBackend):
+    description = "remix 미지원 mock 백엔드"
+    supports_remix = False
 
 
 class FailingBackend(MockBackend):
@@ -103,6 +123,7 @@ def make_client(tmp_path, monkeypatch):
     def _make(**overrides) -> TestClient:
         backends.register("mock", MockBackend)
         backends.register("mock-fail", FailingBackend)
+        backends.register("mock-noremix", NoRemixBackend)
 
         from app.pipeline import orchestrator as orch
         monkeypatch.setattr(orch, "get_llm", lambda settings: FakeLLM())
@@ -127,6 +148,7 @@ def make_client(tmp_path, monkeypatch):
         c.__exit__(None, None, None)
     backends.unregister("mock")
     backends.unregister("mock-fail")
+    backends.unregister("mock-noremix")
 
 
 @pytest.fixture

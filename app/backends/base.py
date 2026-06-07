@@ -62,6 +62,8 @@ class VideoBackend(abc.ABC):
     description: str = ""
     # 지원하는 클립 길이(초). normalize_duration 이 참조한다.
     supported_durations: tuple[float, ...] = (6.0,)
+    # 기존 생성물 부분 수정(remix) 지원 여부. 지원 백엔드만 True 로 재정의.
+    supports_remix: bool = False
 
     def __init__(self, settings: Settings, **params) -> None:
         self.settings = settings
@@ -76,6 +78,18 @@ class VideoBackend(abc.ABC):
     @abc.abstractmethod
     def is_configured(cls, settings: Settings) -> bool:
         """이 백엔드 사용에 필요한 API 키가 설정되어 있는가."""
+
+    # -------------------------------------------------------------- #
+    async def remix_clip(
+        self, source_video_id: str, prompt: str, out_path: Path
+    ) -> ClipResult:
+        """
+        기존 생성물(source_video_id)을 프롬프트로 부분 수정한다.
+        supports_remix=True 인 백엔드만 구현한다.
+        """
+        raise ClipGenerationError(
+            f"'{self.__class__.__name__}' 백엔드는 remix 를 지원하지 않습니다."
+        )
 
     # -------------------------------------------------------------- #
     def normalize_duration(self, requested: float) -> float:
@@ -139,6 +153,7 @@ def backend_info(settings: Settings) -> list[dict]:
                 "description": cls.description,
                 "configured": cls.is_configured(settings),
                 "supported_durations": [float(d) for d in instance_durations],
+                "supports_remix": cls.supports_remix,
             }
         )
     return infos

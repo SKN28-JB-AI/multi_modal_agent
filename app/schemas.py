@@ -77,6 +77,15 @@ class PdfJobOptions(GenerationOptions):
     )
 
 
+class RemixRequest(BaseModel):
+    """완료된 잡의 특정 씬을 프롬프트로 부분 수정(remix)하는 요청."""
+
+    prompt: str = Field(min_length=1, max_length=4000,
+                        description="수정 지시 프롬프트")
+    scene_index: int = Field(default=0, ge=0,
+                             description="수정할 씬 번호(메시지 모드는 0)")
+
+
 # ---------------------------------------------------------------------- #
 # 응답
 # ---------------------------------------------------------------------- #
@@ -113,6 +122,7 @@ class BackendInfo(BaseModel):
     description: str
     configured: bool          # 필요한 API 키가 설정되어 있는지
     supported_durations: list[float]
+    supports_remix: bool = False
 
 
 class ModelsResponse(BaseModel):

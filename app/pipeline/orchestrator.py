@@ -88,6 +88,128 @@ class Orchestrator:
         await self._generate_and_finish(job, storyboard, options, logo_path)
 
     # ================================================================== #
+    # remix 모드: 완료된 잡의 특정 씬을 부분 수정 후 재결합
+    # ================================================================== #
+    async def run_remix_job(self, job: Job, source_job: Job,
+                            scene_index: int, prompt: str) -> None:
+        """
+        source_job 의 scene_index 클립을 백엔드 remix 로 교체하고,
+        나머지 클립은 원본을 복사해 다시 결합한다.
+        원본 잡 디렉터리의 narration.mp3 / logo.png 가 있으면 재적용한다.
+        """
+        import shutil as _shutil
+
+        settings = self.settings
+        backend = get_backend(job.model, settings)
+        job_dir = self.manager.job_dir(job.id)
+        clips_dir = job_dir / "clips"
+        clips_dir.mkdir(parents=True, exist_ok=True)
+
+        storyboard = source_job.storyboard.model_copy(deep=True)
+        scenes = sorted(storyboard.scenes, key=lambda s: s.index)
+        src_states = {s.index: s for s in source_job.scenes}
+        target_state = src_states[scene_index]
+
+        scene_states = [
+            SceneState(index=s.index, status="completed",
+                       backend_job_id=src_states[s.index].backend_job_id)
+            for s in scenes
+        ]
+        self.manager.update(
+            job, status=JobStatus.GENERATING, progress=0.2,
+            storyboard=storyboard, scenes=scene_states,
+        )
+
+        # --- 1) 원본 클립 복사 ----------------------------------------- #
+        clip_paths: dict[int, Path] = {}
+        for s in scenes:
+            src_clip = src_states[s.index].clip_path
+            if not src_clip or not Path(src_clip).exists():
+                self.manager.update(
+                    job, status=JobStatus.FAILED,
+                    error=f"원본 씬 {s.index} 클립 파일이 없습니다.",
+                )
+                return
+            dst = clips_dir / f"scene_{s.index:02d}.mp4"
+            await asyncio.to_thread(_shutil.copyfile, src_clip, dst)
+            clip_paths[s.index] = dst
+
+        # --- 2) 대상 씬 remix ------------------------------------------ #
+        target_scene_state = next(
+            st for st in scene_states if st.index == scene_index
+        )
+        target_scene_state.status = "generating"
+        self.manager.persist(job)
+        try:
+            result = await backend.remix_clip(
+                target_state.backend_job_id, prompt,
+                clip_paths[scene_index],
+            )
+        except Exception as exc:  # noqa: BLE001
+            target_scene_state.status = "failed"
+            target_scene_state.error = str(exc)
+            self.manager.update(
+                job, status=JobStatus.FAILED,
+                error=f"씬 {scene_index} remix 실패: {exc}",
+                scenes=scene_states,
+            )
+            return
+        target_scene_state.status = "completed"
+        target_scene_state.clip_path = str(result.path)
+        target_scene_state.backend_job_id = result.meta.get("backend_job_id")
+
+        # 스토리보드에 수정 프롬프트 기록(이력 추적)
+        for s in scenes:
+            if s.index == scene_index:
+                s.prompt = prompt
+
+        # --- 3) 후처리: 재결합 + SRT + (있으면) 내레이션/로고 재적용 ---- #
+        self.manager.update(
+            job, status=JobStatus.POSTPROCESSING, progress=0.9,
+            storyboard=storyboard, scenes=scene_states,
+        )
+        ordered_clips = [clip_paths[s.index] for s in scenes]
+        durations = [backend.normalize_duration(s.duration_sec) for s in scenes]
+        if result.duration_sec:
+            durations[scene_index] = result.duration_sec
+
+        current = job_dir / "merged.mp4"
+        await asyncio.to_thread(postprocess.concat_clips, ordered_clips, current)
+
+        srt_path = job_dir / "subtitles.srt"
+        has_srt = await asyncio.to_thread(
+            postprocess.write_srt, storyboard, durations, srt_path
+        )
+
+        source_dir = self.manager.job_dir(source_job.id)
+        narration = source_dir / "narration.mp3"
+        if narration.exists():
+            mixed = job_dir / "merged_narrated.mp4"
+            await asyncio.to_thread(
+                postprocess.mix_narration, current, narration, mixed
+            )
+            current = mixed
+        logo = source_dir / "logo.png"
+        if logo.exists():
+            branded = job_dir / "merged_branded.mp4"
+            await asyncio.to_thread(
+                postprocess.overlay_logo, current, logo, branded
+            )
+            current = branded
+
+        final_path = job_dir / "final.mp4"
+        if current != final_path:
+            await asyncio.to_thread(_replace, current, final_path)
+
+        self.manager.update(
+            job, status=JobStatus.COMPLETED, progress=1.0,
+            final_path=str(final_path),
+            subtitles_path=str(srt_path) if has_srt else None,
+            scenes=scene_states,
+        )
+        logger.info("remix 잡 %s 완료: %s", job.id, final_path)
+
+    # ================================================================== #
     # 공통: ③ 씬별 생성 → ④ 후처리
     # ================================================================== #
     async def _generate_and_finish(
@@ -144,6 +266,7 @@ class Orchestrator:
                         durations[scene.index] = result.duration_sec
                         state.status = "completed"
                         state.clip_path = str(result.path)
+                        state.backend_job_id = result.meta.get("backend_job_id")
                         break
                     except Exception as exc:  # noqa: BLE001 - 재시도 대상
                         last_exc = exc
