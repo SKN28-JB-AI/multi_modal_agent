@@ -29,6 +29,7 @@ class LtxBackend(VideoBackend):
     provider = "Lightricks (fal.ai)"
     description = "LTX-2.3 (fal.ai 호스팅). 저비용, 오디오 포함."
     supported_durations = (6.0, 8.0, 10.0)
+    supports_image_input = True   # image_url (첫 프레임 이미지)
 
     @classmethod
     def is_configured(cls, settings: Settings) -> bool:
@@ -39,7 +40,6 @@ class LtxBackend(VideoBackend):
         return min(durations, key=lambda d: abs(d - requested))
 
     async def generate_clip(self, spec: ClipSpec, out_path: Path) -> ClipResult:
-        endpoint = self.params.get("endpoint") or self.settings.ltx_endpoint_default
         duration = int(self.normalize_duration(spec.duration_sec))
         resolution = "1080p" if spec.resolution == "720p" else spec.resolution
 
@@ -51,6 +51,19 @@ class LtxBackend(VideoBackend):
             "fps": 25,
             "generate_audio": spec.generate_audio,
         }
+
+        # image-to-video: 전용 엔드포인트로 전환하고 첫 프레임을
+        # base64 data URI 로 전달한다(fal 은 URL/data URI 모두 허용).
+        if spec.first_frame is not None:
+            endpoint = (
+                self.params.get("i2v_endpoint")
+                or self.settings.ltx_i2v_endpoint_default
+            )
+            payload["image_url"] = _to_data_uri(spec.first_frame)
+        else:
+            endpoint = (
+                self.params.get("endpoint") or self.settings.ltx_endpoint_default
+            )
         headers = {"Authorization": f"Key {self.settings.fal_api_key}"}
         submit_url = f"{self.settings.fal_queue_base}/{endpoint}"
 
@@ -122,3 +135,21 @@ class LtxBackend(VideoBackend):
             duration_sec=float(duration),
             meta={"endpoint": endpoint, "video_url": video_url},
         )
+
+
+# ---------------------------------------------------------------------- #
+# image-to-video 헬퍼
+# ---------------------------------------------------------------------- #
+def _to_data_uri(image_path: Path) -> str:
+    """첫 프레임 이미지를 base64 data URI 로 변환한다."""
+    import base64
+    import mimetypes
+
+    if not image_path.exists():
+        raise ClipGenerationError(f"첫 프레임 이미지가 없습니다: {image_path}")
+    mime = mimetypes.guess_type(str(image_path))[0] or "image/png"
+    try:
+        raw = image_path.read_bytes()
+    except OSError as exc:
+        raise ClipGenerationError(f"첫 프레임 이미지 읽기 실패: {exc}") from exc
+    return f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"

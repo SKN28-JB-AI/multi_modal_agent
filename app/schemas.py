@@ -145,6 +145,7 @@ class BackendInfo(BaseModel):
     configured: bool          # 필요한 API 키가 설정되어 있는지
     supported_durations: list[float]
     supports_remix: bool = False
+    supports_image_input: bool = False
 
 
 class ModelsResponse(BaseModel):

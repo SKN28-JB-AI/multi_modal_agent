@@ -27,6 +27,7 @@ class VeoBackend(VideoBackend):
     provider = "Google"
     description = "Google Veo 3.1 (Gemini API). 네이티브 오디오 포함."
     supported_durations = (4.0, 6.0, 8.0)
+    supports_image_input = True   # image= (첫 프레임 이미지)
 
     @classmethod
     def is_configured(cls, settings: Settings) -> bool:
@@ -59,6 +60,22 @@ class VeoBackend(VideoBackend):
             "resolution": spec.resolution,
         }
 
+        # image-to-video: 첫 프레임 이미지를 함께 전달한다.
+        submit_kwargs: dict = {}
+        if spec.first_frame is not None:
+            if not spec.first_frame.exists():
+                raise ClipGenerationError(
+                    f"첫 프레임 이미지가 없습니다: {spec.first_frame}"
+                )
+            try:
+                submit_kwargs["image"] = types.Image.from_file(
+                    location=str(spec.first_frame)
+                )
+            except Exception as exc:  # noqa: BLE001
+                raise ClipGenerationError(
+                    f"첫 프레임 이미지 로드 실패: {exc}"
+                ) from exc
+
         # 1) 제출 (duration 지원 여부가 SDK/모델 버전에 따라 달라 2단계 시도)
         operation = None
         last_exc: Exception | None = None
@@ -71,6 +88,7 @@ class VeoBackend(VideoBackend):
                     model=model,
                     prompt=spec.prompt,
                     config=types.GenerateVideosConfig(**attempt_kwargs),
+                    **submit_kwargs,
                 )
                 break
             except Exception as exc:  # noqa: BLE001 - 파라미터 거부 시 폴백

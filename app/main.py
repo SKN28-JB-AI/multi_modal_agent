@@ -17,8 +17,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import __version__
 from .config import Settings
+from .ads.manager import AdJobManager
 from .jobs import JobManager
 from .pipeline.orchestrator import Orchestrator
+from .routers import ads as ads_router
 from .routers import jobs as jobs_router
 from .routers import logos as logos_router
 from .routers import models as models_router
@@ -54,12 +56,15 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     app.state.settings = settings
     app.state.job_manager = JobManager(settings.jobs_dir)
     app.state.orchestrator = Orchestrator(settings, app.state.job_manager)
+    # 광고 파이프라인(/v2/ads)은 기존 잡과 분리된 저장소를 쓴다.
+    app.state.ad_job_manager = AdJobManager(settings.ad_jobs_dir)
 
     # 라우터
     app.include_router(videos_router.router)
     app.include_router(jobs_router.router)
     app.include_router(models_router.router)
     app.include_router(logos_router.router)
+    app.include_router(ads_router.router)
 
     @app.get("/health", tags=["health"])
     async def health():

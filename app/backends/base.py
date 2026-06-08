@@ -36,6 +36,9 @@ class ClipSpec:
     resolution: str = "1080p"      # "720p" | "1080p"
     generate_audio: bool = True
     index: int = 0                 # 씬 번호(로그/파일명용)
+    # image-to-video: 시작 프레임 이미지 경로(지원 백엔드만 사용).
+    # None 이면 기존과 동일한 text-to-video 로 동작한다.
+    first_frame: Optional[Path] = None
 
 
 @dataclass
@@ -64,6 +67,8 @@ class VideoBackend(abc.ABC):
     supported_durations: tuple[float, ...] = (6.0,)
     # 기존 생성물 부분 수정(remix) 지원 여부. 지원 백엔드만 True 로 재정의.
     supports_remix: bool = False
+    # 시작 프레임 이미지 입력(image-to-video) 지원 여부.
+    supports_image_input: bool = False
 
     def __init__(self, settings: Settings, **params) -> None:
         self.settings = settings
@@ -154,6 +159,7 @@ def backend_info(settings: Settings) -> list[dict]:
                 "configured": cls.is_configured(settings),
                 "supported_durations": [float(d) for d in instance_durations],
                 "supports_remix": cls.supports_remix,
+                "supports_image_input": cls.supports_image_input,
             }
         )
     return infos

@@ -39,6 +39,7 @@ class SoraBackend(VideoBackend):
     description = "OpenAI Videos API (Sora 2). 2026-09 API 종료 예정."
     supported_durations = (4.0, 8.0, 12.0)
     supports_remix = True
+    supports_image_input = True   # input_reference (첫 프레임 이미지)
 
     @classmethod
     def is_configured(cls, settings: Settings) -> bool:
@@ -65,10 +66,17 @@ class SoraBackend(VideoBackend):
         self, model: str, seconds: str, size: str, spec: ClipSpec, out_path: Path
     ) -> ClipResult:
         client = self._client()
-        try:
-            video = client.videos.create(
-                model=model, prompt=spec.prompt, seconds=seconds, size=size
+        create_kwargs: dict = dict(
+            model=model, prompt=spec.prompt, seconds=seconds, size=size
+        )
+        # image-to-video: input_reference 는 요청 size 와 픽셀 단위로
+        # 정확히 일치해야 하므로 업로드 직전에 cover-crop 으로 맞춘다.
+        if spec.first_frame is not None:
+            create_kwargs["input_reference"] = _prepare_input_reference(
+                spec.first_frame, size
             )
+        try:
+            video = client.videos.create(**create_kwargs)
         except Exception as exc:  # noqa: BLE001
             raise ClipGenerationError(f"Sora 작업 제출 실패: {exc}") from exc
 
@@ -153,3 +161,51 @@ class SoraBackend(VideoBackend):
             content.write_to_file(str(out_path))
         except Exception as exc:  # noqa: BLE001
             raise ClipGenerationError(f"Sora 다운로드 실패: {exc}") from exc
+
+
+# ---------------------------------------------------------------------- #
+# image-to-video 헬퍼
+# ---------------------------------------------------------------------- #
+def _prepare_input_reference(image_path: Path, size: str):
+    """
+    첫 프레임 이미지를 Sora 요청 size("WxH")에 픽셀 단위로 맞춰
+    (filename, bytes, content_type) 멀티파트 튜플로 변환한다.
+    """
+    if not image_path.exists():
+        raise ClipGenerationError(
+            f"첫 프레임 이미지가 없습니다: {image_path}"
+        )
+    try:
+        w, h = (int(x) for x in size.lower().split("x"))
+    except ValueError as exc:
+        raise ClipGenerationError(f"잘못된 size 형식: {size}") from exc
+
+    try:
+        import io
+
+        from PIL import Image
+    except ImportError as exc:
+        raise ClipGenerationError(
+            f"Pillow 패키지가 없습니다: {exc}. "
+            "image-to-video 에는 Pillow 가 필요합니다."
+        ) from exc
+
+    try:
+        with Image.open(image_path) as img:
+            img = img.convert("RGB")
+            sw, sh = img.size
+            if (sw, sh) != (w, h):
+                scale = max(w / sw, h / sh)
+                nw = max(w, round(sw * scale))
+                nh = max(h, round(sh * scale))
+                img = img.resize((nw, nh), Image.LANCZOS)
+                left = (nw - w) // 2
+                top = (nh - h) // 2
+                img = img.crop((left, top, left + w, top + h))
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+    except Exception as exc:  # noqa: BLE001
+        raise ClipGenerationError(
+            f"첫 프레임 이미지 변환 실패: {exc}"
+        ) from exc
+    return ("first_frame.png", buf.getvalue(), "image/png")

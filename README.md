@@ -25,6 +25,15 @@
 | `sora-2`, `sora-2-pro` | OpenAI Videos API | `OPENAI_API_KEY` | ⚠️ 2026-09 API 종료 예정 |
 | `veo-3.1`, `veo-3.1-fast` | Google Gemini API | `GEMINI_API_KEY` | 네이티브 오디오 |
 | `ltx-2.3`, `ltx-2.3-fast` | fal.ai (Lightricks) | `FAL_API_KEY` | 저비용 |
+| `wan-2.2` | Alibaba Model Studio (Wan) | `DASHSCOPE_API_KEY` | 무음, 5초 고정, 480P/1080P |
+| `wan-2.5` | Alibaba Model Studio (Wan) | `DASHSCOPE_API_KEY` | 네이티브 오디오(보이스오버), 5/10초 |
+| `wan-2.6` | Alibaba Model Studio (Wan) | `DASHSCOPE_API_KEY` | 2~15초(가변), 네이티브 오디오, 720P/1080P |
+| `wan-2.7` | Alibaba Model Studio (Wan) | `DASHSCOPE_API_KEY` | 최신, 2~15초(가변), 오디오, 720P/1080P, first/last 제어 |
+
+> Alibaba(DashScope) 모델은 기본 International(싱가포르) 엔드포인트를 쓴다.
+> 다른 리전은 `DASHSCOPE_BASE_URL` 로 덮어쓴다(모델·키·엔드포인트는 동일 리전이어야 함).
+> t2v/i2v 모델 ID 는 `WAN_T2V_MODEL_DEFAULT` / `WAN_I2V_MODEL_DEFAULT` 로 교체 가능.
+> Wan 은 image-to-video(`supports_image_input`)를 지원해 /v2/ads 3단계에서도 쓸 수 있다.
 
 **새 모델 추가**: `app/backends/` 에 `VideoBackend` 구현 파일 1개 +
 `app/backends/__init__.py` 에 `register("이름", 클래스, **파라미터)` 1줄.
@@ -106,6 +115,51 @@ curl -X POST localhost:8000/v1/jobs/{job_id}/remix \
 4. `logos/` 의 첫 파일(이름순)
 
 폴더가 비어 있고 업로드도 없으면 로고 없이 진행한다.
+
+## 광고 파이프라인 API (/v2/ads) — 기존 /v1 과 독립
+
+프롬프트 → 광고 영상 제작을 4단계로 분리해, 각 단계를 개별 API 로 실행/검수할 수 있다.
+
+```
+1) POST /v2/ads/storyboards          프롬프트 → 스토리보드 JSON (잡 생성)
+2) POST /v2/ads/{job_id}/images      컷별 첫 장면 이미지 (1 완료 후)
+3) POST /v2/ads/{job_id}/videos      이미지를 시작 프레임으로 컷 비디오 + 결합
+                                     ★ 2단계(images) 완료 전 호출 시 412
+4) POST /v2/ads/{job_id}/proposal    광고 기획서 PDF — 2·3단계와 무관하게 실행 가능
+
+GET /v2/ads/{job_id}                 단계별 상태 + 산출물 URL (폴링)
+GET /v2/ads/{job_id}/storyboard      스토리보드 JSON
+GET /v2/ads/{job_id}/images/{cut}    컷 이미지(PNG)
+GET /v2/ads/{job_id}/videos/{cut}    컷 클립(MP4)
+GET /v2/ads/{job_id}/video           최종 결합본(MP4)
+GET /v2/ads/{job_id}/proposal        기획서(PDF)
+GET /v2/ads/image-models             이미지 모델 목록
+```
+
+- 모든 단계는 202 + `job_id` 를 즉시 반환하고 백그라운드로 실행된다.
+- 상태 코드: `412` 선행 단계 미완료 / `409` 실행 중·완료(재실행은 `?force=true`) /
+  `422` 모델 오류 / `503` API 키 미설정.
+- **이미지 모델**(2단계, 요청 `model` 로 선택, 기본 `gpt-image-2`):
+  OpenAI `gpt-image-2`·`gpt-image-1` / Google `imagen-4.0` / fal.ai `flux-dev`·`flux-schnell` /
+  Alibaba `qwen-image`·`qwen-image-plus`(`DASHSCOPE_API_KEY`).
+  생성 후 비디오 해상도로 cover-crop 되어 Sora `input_reference` 픽셀 규격을 만족한다.
+- **비디오 모델**(3단계, 기본 `veo-3.1`): 기존 백엔드 3종(Sora/Veo/LTX) + Wan(`wan-2.2`/`wan-2.5`) 모두
+  image-to-video 지원(`supports_image_input`). 컷 길이에 맞춰 트리밍 후 FFmpeg 로 결합.
+- **기획서 PDF**(4단계): 한글 폰트 자동 탐색(맑은고딕/나눔고딕 → 내장 CID 폴백).
+  컷 이미지가 이미 생성돼 있으면 시안으로 함께 삽입된다.
+
+```bash
+# 예시
+curl -s -X POST localhost:8000/v2/ads/storyboards \
+  -H "X-App-Key: $KEY" -H "Content-Type: application/json" \
+  -d '{"prompt":"청년 적금 신규 캠페인", "options":{"cut_count":3,"total_duration_sec":16}}'
+# → {"job_id":"abc123", ...}
+curl -s -X POST localhost:8000/v2/ads/abc123/images   -H "X-App-Key: $KEY" \
+  -H "Content-Type: application/json" -d '{"model":"gpt-image-2"}'
+curl -s -X POST localhost:8000/v2/ads/abc123/videos   -H "X-App-Key: $KEY" \
+  -H "Content-Type: application/json" -d '{"model":"veo-3.1"}'
+curl -s -X POST localhost:8000/v2/ads/abc123/proposal -H "X-App-Key: $KEY"
+```
 
 ## 설계 결정 (주의점 대응)
 

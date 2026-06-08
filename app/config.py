@@ -42,6 +42,13 @@ class Settings(BaseSettings):
     openai_api_key: str = ""      # Sora 2 + LLM(파싱/스토리보드) + TTS(내레이션)
     gemini_api_key: str = ""      # Veo 3.1 (Google Gemini API)
     fal_api_key: str = ""         # LTX-2 (fal.ai 호스팅)
+    dashscope_api_key: str = ""   # Alibaba Model Studio (Wan 비디오 + Qwen-Image)
+
+    # Alibaba Model Studio(DashScope) 리전 엔드포인트 베이스.
+    # International(싱가포르) 기본값. 중국 본토는 https://dashscope.aliyuncs.com/api/v1
+    # 미국(버지니아)은 https://dashscope-us.aliyuncs.com/api/v1 로 덮어쓴다.
+    # 주의: 모델·엔드포인트·API 키는 같은 리전이어야 한다(크로스 리전 호출 실패).
+    dashscope_base_url: str = "https://dashscope-intl.aliyuncs.com/api/v1"
 
     # ------------------------------------------------------------------ #
     # LLM (PDF 파싱 / 스토리보드 변환)
@@ -67,6 +74,36 @@ class Settings(BaseSettings):
     ltx_endpoint_default: str = "fal-ai/ltx-2.3/text-to-video"
     ltx_fast_endpoint: str = "fal-ai/ltx-2.3/text-to-video/fast"
     fal_queue_base: str = "https://queue.fal.run"
+
+    # Alibaba Wan 비디오 모델 ID (API 측 변경에 대비해 .env 로 덮어쓰기 가능)
+    # text-to-video 와 image-to-video 는 모델 ID 가 다르므로 쌍으로 관리한다.
+    wan_t2v_model_default: str = "wan2.2-t2v-plus"   # 무음, 고정 5초, 480P/1080P
+    wan_i2v_model_default: str = "wan2.2-i2v-plus"   # 무음, 고정 5초, 480P/1080P
+
+    # ------------------------------------------------------------------ #
+    # 광고 파이프라인 (/v2/ads — 스토리보드→이미지→비디오→기획서)
+    # ------------------------------------------------------------------ #
+    # 1단계 스토리보드 생성 LLM
+    ad_storyboard_model: str = "gpt-4o"
+    # 2단계 이미지 모델 기본값 (요청에서 model 로 덮어쓰기 가능)
+    ad_image_model_default: str = "gpt-image-2"
+    # 3단계 비디오 모델 기본값 (요청에서 model 로 덮어쓰기 가능)
+    ad_video_model_default: str = "veo-3.1"
+    # Google Imagen 모델 ID (Gemini API)
+    imagen_model_default: str = "imagen-4.0-generate-001"
+    # fal.ai 이미지 생성 엔드포인트 (FLUX)
+    fal_image_endpoint_default: str = "fal-ai/flux/dev"
+    # Alibaba Qwen-Image 텍스트→이미지 모델 ID (DashScope multimodal-generation)
+    qwen_image_model_default: str = "qwen-image-2.0-pro"
+    # LTX image-to-video 엔드포인트 (text-to-video 와 별도)
+    ltx_i2v_endpoint_default: str = "fal-ai/ltx-2.3/image-to-video"
+    ltx_i2v_fast_endpoint: str = "fal-ai/ltx-2.3/image-to-video/fast"
+    # 이미지 1장당 최대 대기 시간(초) — 비디오보다 훨씬 짧다
+    image_poll_timeout_sec: float = 300.0
+    # 컷 이미지 생성 실패 시 재시도 횟수
+    image_retries: int = 1
+    # 기획서 PDF 한글 폰트 TTF 경로 (미지정 시 OS 폰트 자동 탐색)
+    ad_pdf_font_path: str = ""
 
     # ------------------------------------------------------------------ #
     # 내레이션(TTS) — 선택 기능
@@ -110,6 +147,10 @@ class Settings(BaseSettings):
     @property
     def jobs_dir(self) -> Path:
         return Path(self.data_dir) / "jobs"
+
+    @property
+    def ad_jobs_dir(self) -> Path:
+        return Path(self.data_dir) / "ad_jobs"
 
     def validate_runtime(self) -> None:
         """서버 기동 시 필수 설정 검증. 문제가 있으면 RuntimeError."""

@@ -20,6 +20,7 @@ from .base import (
 from .ltx import LtxBackend
 from .sora import SoraBackend
 from .veo import VeoBackend
+from .wan import WanBackend
 
 # ---------------------------------------------------------------------- #
 # 기본 백엔드 등록
@@ -33,8 +34,45 @@ register(
     "ltx-2.3-fast",
     LtxBackend,
     endpoint="fal-ai/ltx-2.3/text-to-video/fast",
+    i2v_endpoint="fal-ai/ltx-2.3/image-to-video/fast",
     # Fast 변형은 6~20초(짝수) 지원
     supported_durations=(6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0),
+)
+
+# --- Alibaba Wan (Model Studio / DashScope) ---------------------------- #
+# wan-2.2: 무음, 5초 고정, 480P/1080P (settings 기본 모델 ID 사용)
+register(
+    "wan-2.2",
+    WanBackend,
+    supported_durations=(5.0,),
+    resolutions=("480p", "1080p"),
+)
+# wan-2.5: 오디오 생성(보이스오버 발화), 5/10초, 480/720/1080P
+register(
+    "wan-2.5",
+    WanBackend,
+    t2v_model="wan2.5-t2v-preview",
+    i2v_model="wan2.5-i2v-preview",
+    supported_durations=(5.0, 10.0),
+    resolutions=("480p", "720p", "1080p"),
+)
+# wan-2.6: 2~15초(가변), 네이티브 오디오, 720P/1080P, 멀티샷 지원.
+register(
+    "wan-2.6",
+    WanBackend,
+    t2v_model="wan2.6-t2v",
+    i2v_model="wan2.6-i2v",
+    supported_durations=(4.0, 5.0, 6.0, 8.0, 10.0, 12.0, 15.0),
+    resolutions=("720p", "1080p"),
+)
+# wan-2.7: 최신 세대. 2~15초(가변), 네이티브 오디오, 720P/1080P, 멀티샷·first/last 제어.
+register(
+    "wan-2.7",
+    WanBackend,
+    t2v_model="wan2.7-t2v",
+    i2v_model="wan2.7-i2v",
+    supported_durations=(4.0, 5.0, 6.0, 8.0, 10.0, 12.0, 15.0),
+    resolutions=("720p", "1080p"),
 )
 
 __all__ = [
