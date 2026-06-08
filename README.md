@@ -65,10 +65,14 @@ API 문서: http://localhost:8000/docs
 curl -H "X-App-Key: dev-key-change-me" localhost:8000/v1/models
 
 # 메시지 모드
+# 비디오 생성 전, OpenAI 기본 모델(OPENAI_LLM_MODEL)이 입력 프롬프트를
+# 대상 비디오 모델(ltx/veo/sora)에 맞는 프롬프트로 자동 변환한다(선행 단계).
+# 끄려면 본문에 "enhance_prompt": false, 또는 서버에서 ENHANCE_MESSAGE_PROMPT=false.
+# OPENAI_API_KEY 가 없거나 변환 실패 시 원본 프롬프트로 자동 폴백한다.
 curl -X POST localhost:8000/v1/videos/message \
   -H "X-App-Key: dev-key-change-me" -H "Content-Type: application/json" \
   -d '{"prompt": "노을 지는 해변, 잔잔한 파도 소리", "model": "ltx-2.3",
-       "duration_sec": 8, "aspect_ratio": "16:9"}'
+       "duration_sec": 8, "aspect_ratio": "16:9", "enhance_prompt": true}'
 
 # PDF 기획서 모드 (+선택: 로고 오버레이)
 curl -X POST localhost:8000/v1/videos/pdf \
@@ -163,21 +167,4 @@ curl -s -X POST localhost:8000/v2/ads/abc123/proposal -H "X-App-Key: $KEY"
 
 ## 설계 결정 (주의점 대응)
 
-- **씬 길이 보정**: 백엔드마다 지원 길이가 달라(Sora 4/8/12s, Veo 4/6/8s,
-  LTX 6/8/10s…) 요청 값을 가장 가까운 지원 값으로 자동 보정한다.
-- **브랜드 요소**: 로고·화면 텍스트는 생성 모델이 거부/왜곡하므로
-  프롬프트에서 배제하고 후처리(오버레이·SRT)로 처리한다(LLM 프롬프트에 명시).
-- **부분 실패**: 한 씬이라도 실패하면 잡 전체 failed (부분 광고는 무의미).
-  씬별 재시도(`CLIP_RETRIES`)와 동시성 제한(`MAX_CONCURRENT_CLIPS`) 내장.
-- **모델 ID 드리프트**: 프리뷰 모델 ID 변경에 대비해 .env 로 덮어쓰기 가능.
-- **확장**: 잡 저장소는 단일 프로세스(메모리+JSON) 가정. 다중 워커로 가려면
-  `app/jobs/manager.py` 를 Redis/DB + 작업큐로 교체한다.
-- **법적 표기**: AI 생성 광고물은 표시 의무(한국 AI기본법 등) 검토 필요 —
-  서비스가 자동 처리하지 않으므로 송출 전 별도 확인.
-
-## 테스트
-
-```bash
-pip install -r requirements-dev.txt
-pytest tests/ -v     # mock 백엔드/LLM 기반 — 외부 API 호출 없음
-```
+- **씬 길이 

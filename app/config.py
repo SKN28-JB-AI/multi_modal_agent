@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     # LLM (PDF 파싱 / 스토리보드 변환)
     # ------------------------------------------------------------------ #
     openai_llm_model: str = "gpt-4o"
+    # 메시지 모드(/v1/videos/message)에서 비디오 생성 전에 입력 프롬프트를
+    # 비디오 모델 맞춤 프롬프트로 변환할지 여부. OpenAI 기본 모델 사용.
+    # 요청 본문의 enhance_prompt 로 건당 덮어쓸 수 있다.
+    enhance_message_prompt: bool = True
+
     # PDF 페이지를 비전 LLM에 넘길 때의 최대 페이지 수(비용 가드).
     pdf_max_pages: int = 10
     # PDF 페이지 렌더링 DPI (높을수록 선명하지만 토큰/전송량 증가).

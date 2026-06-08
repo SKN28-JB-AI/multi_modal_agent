@@ -76,6 +76,20 @@ AI 영상 생성 모델용 스토리보드를 JSON 으로 작성하세요.
 }}"""
 
 
+_ENHANCE_SYSTEM = """You are an expert prompt engineer for AI text-to-video models (such as Sora 2, Veo 3.1, and LTX-2). Rewrite the user's short ad idea into a single, vivid, production-ready video generation prompt for the target model.
+
+Rules:
+- Output ONLY the rewritten prompt text. No preamble, no quotes, no markdown, no labels.
+- Write the cinematic description in English (these models perform best in English).
+- Be concrete about: subject and action, setting, camera work (shot size, movement), lighting and color palette, mood, and pacing for a {duration:.0f}-second {aspect_ratio} clip.
+- Keep brand-safe, realistic commercial tone. Do NOT invent on-screen text, logos, watermarks, or real public figures.
+- If the user's idea implies spoken narration or dialogue, you MAY keep one short quoted line and name the speaking language as {language_name}; otherwise omit speech.
+- Preserve the user's core intent and any specific products, places, or constraints they mentioned. Do not contradict them.
+- Target video model family: {model_family}. Tailor phrasing to what that family handles best, but keep it a single flowing prompt (no shot lists, no numbered steps).
+- Keep it under roughly 120 words.
+"""
+
+
 class OpenAILLM:
     """PDF 이해/스토리보드 변환용 OpenAI LLM 래퍼."""
 
@@ -167,3 +181,72 @@ class OpenAILLM:
                     }
                 )
         raise RuntimeError(f"스토리보드 생성 실패(스키마 불일치): {last_error}")
+
+    # ------------------------------------------------------------------ #
+    # ③ 메시지 프롬프트 → 비디오 모델 맞춤 프롬프트 (message 모드 선행 단계)
+    # ------------------------------------------------------------------ #
+    async def enhance_video_prompt(
+        self,
+        prompt: str,
+        *,
+        model: str,
+        aspect_ratio: str = "16:9",
+        resolution: str = "1080p",
+        duration_sec: float = 6.0,
+        language: str = "ko",
+    ) -> str:
+        """
+        사용자 입력 프롬프트를 대상 비디오 모델에 적합한 생성 프롬프트로
+        변환한다. OpenAI 기본 설정 모델(settings.openai_llm_model)을 쓴다.
+
+        반환값은 변환된 프롬프트 문자열이다. 변환 결과가 비어 있으면
+        원본을 그대로 돌려준다(호출자에서 추가 폴백 가능).
+        """
+        model_family = _video_model_family(model)
+        language_name = _LANGUAGE_NAMES.get(language, language or "Korean")
+        system = _ENHANCE_SYSTEM.format(
+            duration=float(duration_sec),
+            aspect_ratio=aspect_ratio,
+            language_name=language_name,
+            model_family=model_family,
+        )
+        resp = await self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": system},
+                {
+                    "role": "user",
+                    "content": (
+                        "Rewrite this ad idea into a video generation prompt:\n"
+                        + prompt.strip()
+                    ),
+                },
+            ],
+        )
+        enhanced = (resp.choices[0].message.content or "").strip()
+        # 모델이 코드블록/따옴표로 감싸는 경우를 정리한다.
+        enhanced = enhanced.strip("`").strip()
+        if enhanced.startswith('"') and enhanced.endswith('"') and len(enhanced) > 1:
+            enhanced = enhanced[1:-1].strip()
+        return enhanced or prompt.strip()
+
+
+# ---------------------------------------------------------------------- #
+# 헬퍼
+# ---------------------------------------------------------------------- #
+_LANGUAGE_NAMES = {
+    "ko": "Korean", "en": "English", "ja": "Japanese", "zh": "Chinese",
+    "es": "Spanish", "fr": "French", "de": "German", "vi": "Vietnamese",
+}
+
+
+def _video_model_family(model: str) -> str:
+    """비디오 백엔드 이름에서 모델 패밀리 라벨을 유추한다(프롬프트 튜닝용)."""
+    name = (model or "").lower()
+    if name.startswith("sora"):
+        return "OpenAI Sora"
+    if name.startswith("veo"):
+        return "Google Veo"
+    if name.startswith("ltx"):
+        return "Lightricks LTX"
+    return "generic text-to-video"

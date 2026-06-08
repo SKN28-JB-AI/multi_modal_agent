@@ -68,6 +68,14 @@ class MessageRequest(GenerationOptions):
         default=None, ge=2.0, le=20.0,
         description="클립 길이(초). 백엔드 지원 값으로 자동 보정됨",
     )
+    enhance_prompt: Optional[bool] = Field(
+        default=None,
+        description=(
+            "비디오 생성 전 OpenAI 기본 모델로 프롬프트를 비디오 모델 맞춤형으로 "
+            "변환할지 여부. 미지정 시 서버 기본값(ENHANCE_MESSAGE_PROMPT)을 따른다. "
+            "OpenAI 키가 없거나 변환 실패 시 원본 프롬프트로 자동 폴백한다."
+        ),
+    )
 
 
 class PdfJobOptions(GenerationOptions):

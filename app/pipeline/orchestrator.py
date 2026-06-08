@@ -53,18 +53,75 @@ class Orchestrator:
     # ================================================================== #
     async def run_message_job(self, job: Job) -> None:
         req = job.request
+        duration = req.get("duration_sec") or 6.0
+        # 비디오 생성 전 프롬프트 변환(선행 단계). 실패해도 원본으로 진행.
+        prompt = await self._maybe_enhance_prompt(job, duration)
         storyboard = Storyboard(
             title="message",
             scenes=[
                 Scene(
                     index=0,
-                    prompt=req["prompt"],
-                    duration_sec=req.get("duration_sec") or 6.0,
+                    prompt=prompt,
+                    duration_sec=duration,
                 )
             ],
         )
         self.manager.update(job, storyboard=storyboard)
         await self._generate_and_finish(job, storyboard, options=None)
+
+    async def _maybe_enhance_prompt(self, job: Job, duration: float) -> str:
+        """
+        메시지 모드 프롬프트를 비디오 모델 맞춤형으로 변환한다(선행 단계).
+
+        OpenAI 기본 설정 모델(settings.openai_llm_model)을 사용한다.
+        다음 경우에는 원본 프롬프트를 그대로 사용한다(안전 폴백):
+          - 요청/설정에서 변환 비활성화
+          - OPENAI_API_KEY 미설정
+          - 변환 호출 실패(네트워크/쿼터 등)
+        변환에 사용된 원본/결과는 job.request 에 기록해 감사 가능하게 한다.
+        """
+        req = job.request
+        original = req["prompt"]
+
+        # 요청값(enhance_prompt) 우선, 없으면 서버 기본값.
+        want = req.get("enhance_prompt")
+        if want is None:
+            want = self.settings.enhance_message_prompt
+        if not want:
+            return original
+
+        if not self.settings.openai_api_key:
+            logger.info(
+                "잡 %s: OPENAI_API_KEY 미설정 → 프롬프트 변환 생략(원본 사용)", job.id
+            )
+            return original
+
+        try:
+            llm = get_llm(self.settings)
+            enhanced = await llm.enhance_video_prompt(
+                original,
+                model=job.model,
+                aspect_ratio=req.get("aspect_ratio") or "16:9",
+                resolution=req.get("resolution") or "1080p",
+                duration_sec=duration,
+                language="ko",
+            )
+        except Exception as exc:  # noqa: BLE001 - 변환 실패는 비치명(원본 폴백)
+            logger.warning(
+                "잡 %s: 프롬프트 변환 실패 → 원본 사용: %s", job.id, exc
+            )
+            return original
+
+        enhanced = (enhanced or "").strip()
+        if not enhanced or enhanced == original.strip():
+            return original
+
+        # 감사용 기록(원본 프롬프트 보존 + 변환 결과).
+        req["original_prompt"] = original
+        req["enhanced_prompt"] = enhanced
+        self.manager.update(job, request=req)
+        logger.info("잡 %s: 프롬프트 변환 완료(모델=%s)", job.id, job.model)
+        return enhanced
 
     # ================================================================== #
     # PDF 기획서 모드
