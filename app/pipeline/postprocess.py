@@ -382,6 +382,54 @@ def _bg_to_ffmpeg_color(bg: str) -> str:
     return f"0x{v.upper()}"
 
 
+def _video_framerate(video_path: Path) -> str:
+    """
+    참조 영상의 프레임레이트를 'num/den'(예: 30000/1001) 문자열로 얻는다.
+    아웃트로를 본편과 같은 fps 로 만들어, concat 결과가 가변프레임(VFR)이 되어
+    엔드카드가 더 빠르게(=짧게) 재생되는 문제를 막는다. 실패/이상값이면 '30'.
+    """
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        return "30"
+    proc = subprocess.run(
+        [ffprobe, "-v", "error", "-select_streams", "v:0",
+         "-show_entries", "stream=r_frame_rate",
+         "-of", "default=noprint_wrappers=1:nokey=1", str(video_path)],
+        capture_output=True, text=True,
+    )
+    raw = (proc.stdout or "").strip().splitlines()
+    raw = raw[0].strip() if raw else ""
+    try:
+        if "/" in raw:
+            num, den = raw.split("/", 1)
+            val = float(num) / float(den) if float(den) else 0.0
+        else:
+            val = float(raw)
+    except (ValueError, ZeroDivisionError):
+        val = 0.0
+    if not (1.0 <= val <= 240.0):
+        return "30"
+    return raw
+
+
+def _audio_sample_rate(video_path: Path) -> int:
+    """참조 영상 오디오의 샘플레이트(Hz). 없거나 이상값이면 48000."""
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        return 48000
+    proc = subprocess.run(
+        [ffprobe, "-v", "error", "-select_streams", "a:0",
+         "-show_entries", "stream=sample_rate",
+         "-of", "default=noprint_wrappers=1:nokey=1", str(video_path)],
+        capture_output=True, text=True,
+    )
+    try:
+        sr = int((proc.stdout or "").strip().splitlines()[0])
+    except (ValueError, IndexError):
+        return 48000
+    return sr if 8000 <= sr <= 192000 else 48000
+
+
 def make_logo_outro(
     logo_path: Path,
     reference_video: Path,
@@ -402,13 +450,18 @@ def make_logo_outro(
     ffmpeg = _ffmpeg()
     w, h = _video_dimensions(reference_video)
     with_audio = _has_audio_stream(reference_video)
+    # 본편과 동일한 fps/샘플레이트로 엔드카드를 만들어 CFR 결합을 보장한다.
+    # (하드코딩 25fps 였을 때 Sora 등 다른 fps 본편과 concat 시 아웃트로가
+    #  본편 fps 로 재생돼 2.5초보다 짧게 보이던 문제를 해결.)
+    fps = _video_framerate(reference_video)
+    sample_rate = _audio_sample_rate(reference_video)
     dur = max(0.5, float(duration_sec))
     fade = max(0.0, min(float(fade_sec), dur / 2))
     logo_w = max(48, int(w * max(0.05, min(scale_ratio, 0.95))))
     color = _bg_to_ffmpeg_color(bg_hex)
 
     inputs = [
-        "-f", "lavfi", "-i", f"color=c={color}:s={w}x{h}:r=25:d={dur:.3f}",
+        "-f", "lavfi", "-i", f"color=c={color}:s={w}x{h}:r={fps}:d={dur:.3f}",
         "-loop", "1", "-i", str(logo_path),
     ]
     # 로고: 프레임을 넘지 않도록 폭/높이 동시 제한 후 중앙 오버레이 + 페이드.
@@ -428,12 +481,12 @@ def make_logo_outro(
     maps = ["-map", "[v]"]
     if with_audio:
         cmd += ["-f", "lavfi", "-i",
-                "anullsrc=channel_layout=stereo:sample_rate=44100"]
+                f"anullsrc=channel_layout=stereo:sample_rate={sample_rate}"]
         maps += ["-map", "2:a"]
     cmd += [
         "-filter_complex", vchain, *maps,
         "-t", f"{dur:.3f}",
-        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "25",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", fps,
     ]
     if with_audio:
         cmd += ["-c:a", "aac", "-shortest"]

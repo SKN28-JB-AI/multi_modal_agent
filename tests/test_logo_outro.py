@@ -134,3 +134,50 @@ def test_message_outro_skipped_when_no_logo(make_client, tmp_path):
     video = client.get(body["video_url"], headers=auth_headers())
     out = tmp_path / "v.mp4"; out.write_bytes(video.content)
     assert _dur(out) < 3.5
+
+
+def _probe_fps(path: Path) -> tuple[str, str]:
+    r = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+         "-show_entries", "stream=r_frame_rate,avg_frame_rate",
+         "-of", "default=nokey=1:noprint_wrappers=1", str(path)],
+        capture_output=True, text=True)
+    lines = r.stdout.strip().splitlines()
+    return (lines[0].strip(), lines[1].strip()) if len(lines) >= 2 else ("", "")
+
+
+def _make_ref_fps(path: Path, fps: str, dur=3.0):
+    subprocess.run(
+        ["ffmpeg", "-y",
+         "-f", "lavfi", "-i", f"color=c=green:s=640x360:r={fps}:d={dur}",
+         "-f", "lavfi", "-i", f"sine=frequency=440:duration={dur}",
+         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", fps,
+         "-c:a", "aac", "-shortest", str(path)],
+        check=True, capture_output=True)
+
+
+def test_outro_matches_reference_fps_and_concat_is_cfr(tmp_path):
+    """
+    회귀: 아웃트로가 본편과 다른 fps(과거 하드코딩 25fps)로 만들어지면 concat 결과가
+    VFR 이 되어 엔드카드가 본편 fps 로 재생→짧게 보였다. 이제 본편 fps 를 따라가
+    결합본이 CFR 이고 아웃트로가 요청 길이만큼 온전히 재생되어야 한다.
+    """
+    for fps in ("30", "24", "60"):
+        ref = tmp_path / f"ref_{fps.replace('/', '_')}.mp4"
+        _make_ref_fps(ref, fps)
+        logo = tmp_path / "logo.png"; _logo(logo)
+        outro = tmp_path / f"outro_{fps}.mp4"
+        make_logo_outro(logo, ref, outro, duration_sec=2.5, bg_hex="#134A8E")
+
+        # 아웃트로가 본편과 같은 fps 로 생성됐는지(ffprobe 는 'num/den' 표기)
+        assert _probe_fps(outro)[0] == _probe_fps(ref)[0], (
+            fps, _probe_fps(outro), _probe_fps(ref))
+
+        final = tmp_path / f"final_{fps}.mp4"
+        append_outro(ref, outro, final)
+        # 결합본이 CFR(r_frame_rate == avg_frame_rate)
+        r_fps, avg_fps = _probe_fps(final)
+        assert r_fps == avg_fps, (fps, r_fps, avg_fps)
+        # 아웃트로 분량이 요청 길이(2.5s)에 근접(본편 3s + 2.5s)
+        outro_portion = _dur(final) - _dur(ref)
+        assert abs(outro_portion - 2.5) < 0.2, (fps, outro_portion)

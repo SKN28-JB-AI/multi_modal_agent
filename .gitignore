@@ -11,3 +11,9 @@ venv/
 
 # 생성 산출물 (잡 데이터 / 클립 / 최종본)
 data/
+
+# pytest / coverage 산출물
+pytest-cache-files-*/
+.cache/
+.coverage
+htmlcov/
