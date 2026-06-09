@@ -10,7 +10,6 @@
   <br>
   <sub><b>▶ 썸네일을 클릭하면 데모 영상(title.mp4)이 재생됩니다</b></sub>
 </p>
-![영상](https://github.com/user-attachments/assets/5671e1a9-97ed-4ab6-a128-44a056712e23)
 
 <!--
   참고(GitHub 동작): 커밋된 mp4 를 상대경로나 raw URL <video> 로 가리켜도
