@@ -1,13 +1,26 @@
 # multi_modal_agent
 
-<!-- 데모 영상: title.mp4 는 이 README 와 같은 폴더에 함께 커밋되어야
-     GitHub 에서 인라인 플레이어로 재생됩니다(상대경로 참조). -->
+<!-- 데모 영상: 썸네일(title_poster.png)을 클릭하면 GitHub 에서 title.mp4 가 재생됩니다.
+     이미지/영상은 상대경로라 레포 주소와 무관하며, 두 파일을 이 README 와 같은
+     위치에 함께 커밋해야 합니다. -->
 <p align="center">
-  <video src="title.mp4" controls muted playsinline width="720">
-    데모 영상을 재생할 수 없는 환경입니다 &mdash;
-    👉 <a href="title.mp4">title.mp4 내려받아 보기</a>
-  </video>
+  <a href="title.mp4" title="데모 영상 재생">
+    <img src="title_poster.png" alt="▶ 데모 영상 재생" width="760">
+  </a>
+  <br>
+  <sub><b>▶ 썸네일을 클릭하면 데모 영상(title.mp4)이 재생됩니다</b></sub>
 </p>
+
+<!--
+  [선택] GitHub 에서 '인라인 자동 플레이어'로 띄우려면 아래 절대 raw URL <video> 를
+  쓰세요. OWNER/REPO/BRANCH 와 경로를 본인 저장소 값으로 바꾼 뒤 이 주석을 해제하면
+  됩니다(레포 루트가 multi_modal_agent 면 경로에서 'multi_modal_agent/' 를 빼세요):
+
+  <p align="center">
+    <video src="https://github.com/OWNER/REPO/raw/BRANCH/multi_modal_agent/title.mp4"
+           controls muted playsinline width="760"></video>
+  </p>
+-->
 
 광고용 멀티모달 동영상 생성 백엔드 서비스 (FastAPI).
 
