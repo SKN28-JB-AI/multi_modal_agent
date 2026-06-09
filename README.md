@@ -4,11 +4,7 @@
      이미지/영상은 상대경로라 레포 주소와 무관하며, 두 파일을 이 README 와 같은
      위치에 함께 커밋해야 합니다. -->
 <p align="center">
-  <a href="title.mp4" title="데모 영상 재생">
-    <img src="title_poster.png" alt="▶ 데모 영상 재생" width="760">
-  </a>
-  <br>
-  <sub><b>▶ 썸네일을 클릭하면 데모 영상(title.mp4)이 재생됩니다</b></sub>
+https://github.com/user-attachments/assets/5671e1a9-97ed-4ab6-a128-44a056712e23
 </p>
 
 <!--
