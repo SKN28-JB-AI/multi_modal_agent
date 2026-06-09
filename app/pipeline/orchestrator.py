@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..backends import ClipSpec, get_backend, normalize_text_exposure
+from .. import narration
 from ..config import Settings
 from ..jobs import Job, JobManager, JobStatus, SceneState
 from ..schemas import PdfJobOptions, Scene, Storyboard
@@ -366,6 +367,8 @@ class Orchestrator:
         # TTS 내레이션(enable_narration)을 쓸 때는 모델 발화를 빼서
         # 목소리가 이중으로 겹치지 않게 한다.
         embed_narration = not (options and options.enable_narration)
+        # 무음 모델(예: wan-2.2)은 임베디드 보이스오버가 무의미하므로 생략한다.
+        embed_narration = embed_narration and backend.audio_supported()
 
         semaphore = asyncio.Semaphore(max(1, settings.max_concurrent_clips))
         results: dict[int, Path] = {}
@@ -376,7 +379,10 @@ class Orchestrator:
         async def _one_scene(scene: Scene, state: SceneState) -> None:
             nonlocal done_count
             spec = ClipSpec(
-                prompt=self._compose_prompt(scene, language, embed_narration),
+                prompt=self._compose_prompt(
+                    scene, language, embed_narration,
+                    clip_duration=backend.normalize_duration(scene.duration_sec),
+                ),
                 duration_sec=scene.duration_sec,
                 aspect_ratio=aspect,
                 resolution=resolution,
@@ -456,10 +462,14 @@ class Orchestrator:
         clips_dir = job_dir / "clips"
         clips_dir.mkdir(parents=True, exist_ok=True)
 
-        embed_narration = not options.enable_narration
+        # 무음 모델은 임베디드 보이스오버 생략. TTS(enable_narration)는 별도 처리.
+        embed_narration = (not options.enable_narration) and backend.audio_supported()
         planned_total = sum(s.duration_sec for s in storyboard.scenes) or 1.0
+        # 단일 클립의 '실제' 길이(백엔드 보정값)에 맞춰 보이스오버 분량을 산정한다.
+        actual_clip = backend.normalize_duration(planned_total)
         prompt = self._build_single_prompt(
-            storyboard, options.language, embed_narration, planned_total
+            storyboard, options.language, embed_narration, planned_total,
+            clip_duration=actual_clip,
         )
 
         state = SceneState(index=0)
@@ -521,6 +531,7 @@ class Orchestrator:
     def _build_single_prompt(
         storyboard: Storyboard, language: str,
         embed_narration: bool, planned_total: float,
+        clip_duration: float | None = None,
     ) -> str:
         """
         스토리보드를 '샷 타임라인' 단일 프롬프트로 합성한다.
@@ -530,7 +541,6 @@ class Orchestrator:
         - 보이스오버는 따옴표 대사 + 언어 + 화자 지정(3요소)을 한 블록으로,
           샷 순서대로 나열한다.
         """
-        lang_name = _LANGUAGE_NAMES.get(language, language)
         n = len(storyboard.scenes)
         lines = [
             f"A single continuous {int(round(planned_total))}-second "
@@ -553,10 +563,11 @@ class Orchestrator:
         ]
         if embed_narration and narrations:
             spoken = " then ".join(f'"{t}"' for t in narrations)
+            # 보이스오버 분량을 클립의 실제 길이(모델 보정값)에 맞춰 꽉 채운다.
             lines.append(
-                f"Voiceover: a warm, calm narrator speaks in {lang_name} "
-                f"across the shots, in order: {spoken} "
-                f"(clear voiceover speech, not on-screen text)"
+                narration.voiceover_multi_line(
+                    spoken, clip_duration or planned_total, language
+                )
             )
         return "\n".join(lines)
 
@@ -711,7 +722,8 @@ class Orchestrator:
     # ------------------------------------------------------------------ #
     @staticmethod
     def _compose_prompt(scene: Scene, language: str = "ko",
-                        embed_narration: bool = True) -> str:
+                        embed_narration: bool = True,
+                        clip_duration: float | None = None) -> str:
         """
         씬 프롬프트 + 오디오 묘사 + 보이스오버 지시문을 합성한다.
 
@@ -726,11 +738,10 @@ class Orchestrator:
         if scene.audio_description.strip():
             prompt += f"\nAudio: {scene.audio_description.strip()}"
         if embed_narration and scene.narration.strip():
-            lang_name = _LANGUAGE_NAMES.get(language, language)
-            prompt += (
-                f"\nVoiceover: a warm, calm narrator says in {lang_name}: "
-                f"\"{scene.narration.strip()}\" "
-                f"(clear voiceover speech, not on-screen text)"
+            # 보이스오버 분량을 클립 길이(모델 보정값 우선)에 맞춰 꽉 채운다.
+            d = clip_duration if clip_duration else scene.duration_sec
+            prompt += "\n" + narration.voiceover_line(
+                scene.narration.strip(), d, language
             )
         return prompt
 

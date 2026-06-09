@@ -190,6 +190,10 @@ class VideoBackend(abc.ABC):
     supports_remix: bool = False
     # 시작 프레임 이미지 입력(image-to-video) 지원 여부.
     supports_image_input: bool = False
+    # 네이티브 오디오(보이스오버/효과음) 생성 지원 여부.
+    # False 인 모델(예: 무음 wan-2.2)은 임베디드 보이스오버가 무의미하므로
+    # 호출자가 이 플래그로 판단해 임베디드 내레이션을 생략한다.
+    supports_audio: bool = True
 
     def __init__(self, settings: Settings, **params) -> None:
         self.settings = settings
@@ -221,6 +225,10 @@ class VideoBackend(abc.ABC):
     def normalize_duration(self, requested: float) -> float:
         """요청 길이를 백엔드가 지원하는 가장 가까운 값으로 보정."""
         return min(self.supported_durations, key=lambda d: abs(d - requested))
+
+    def audio_supported(self) -> bool:
+        """이 인스턴스가 네이티브 오디오를 생성하는가(등록 파라미터 우선)."""
+        return bool(self.params.get("supports_audio", self.supports_audio))
 
 
 # ---------------------------------------------------------------------- #
@@ -281,6 +289,9 @@ def backend_info(settings: Settings) -> list[dict]:
                 "supported_durations": [float(d) for d in instance_durations],
                 "supports_remix": cls.supports_remix,
                 "supports_image_input": cls.supports_image_input,
+                "supports_audio": bool(
+                    reg.params.get("supports_audio", cls.supports_audio)
+                ),
             }
         )
     return infos

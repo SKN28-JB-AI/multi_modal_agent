@@ -53,6 +53,7 @@ register(
     WanBackend,
     supported_durations=(5.0,),
     resolutions=("480p", "1080p"),
+    supports_audio=False,   # wan-2.2 계열은 무음(네이티브 오디오 없음)
 )
 # wan-2.5: 오디오 생성(보이스오버 발화), 5/10초, 480/720/1080P
 register(

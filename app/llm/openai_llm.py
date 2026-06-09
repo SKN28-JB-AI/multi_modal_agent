@@ -21,6 +21,7 @@ import logging
 from pydantic import ValidationError
 
 from ..config import Settings
+from .. import narration
 from ..schemas import PdfJobOptions, Storyboard
 
 logger = logging.getLogger(__name__)
@@ -59,9 +60,8 @@ AI 영상 생성 모델용 스토리보드를 JSON 으로 작성하세요.
 7. **내레이션 분배(중요)**: narration_script 를 씬별로 나눠 각 씬의
    narration 필드에 배치하세요. 씬의 narration 은 비디오 모델이
    보이스오버로 **직접 발화**하므로 반드시 채워야 합니다.
-   - {language} 로, 씬당 한 문장.
-   - 발화 가능 분량 엄수: 6초 씬 기준 15자 내외(초당 2~3자).
-     길면 잘리거나 뭉개집니다.
+   - {language} 로 작성합니다.
+   - {narration_guidance}
    - 브리프에 내레이션/카피 제안이 있으면 그것을 우선 사용해 분배하세요.
 
 반드시 아래 구조의 JSON 객체만 출력하세요:
@@ -84,7 +84,7 @@ Rules:
 - Be concrete about: subject and action, setting, camera work (shot size, movement), lighting and color palette, mood, and pacing for a {duration:.0f}-second {aspect_ratio} clip.
 - Keep brand-safe, realistic commercial tone. Never depict real public figures.
 - On-screen text policy ({text_policy}): {text_policy_rule}
-- The target audience speaks {language_name}, so ANY spoken narration or voiceover MUST be written in {language_name} (this is the default even if the user did not specify a language). If the idea implies speech, keep at most one short spoken line, written in {language_name}; otherwise omit speech entirely. Never place that line as on-screen text.
+- The target audience speaks {language_name}, so ANY spoken narration or voiceover MUST be written in {language_name} (this is the default even if the user did not specify a language). {vo_rule}
 - Preserve the user's core intent and any specific products, places, or constraints they mentioned. Do not contradict them.
 - Target video model family: {model_family}. Tailor phrasing to what that family handles best, but keep it a single flowing prompt (no shot lists, no numbered steps).
 - Keep it under roughly 120 words.
@@ -169,6 +169,7 @@ class OpenAILLM:
             max_scenes=options.max_scenes,
             target_duration=int(options.target_total_duration_sec),
             language=options.language,
+            narration_guidance=narration.storyboard_hint(options.language),
         )
         user = (
             "광고 브리프:\n"
@@ -240,6 +241,7 @@ class OpenAILLM:
             model_family=model_family,
             text_policy=text_policy,
             text_policy_rule=text_policy_rule,
+            vo_rule=narration.enhance_rule(duration_sec, lang_code),
         )
         resp = await self.client.chat.completions.create(
             model=self.model,

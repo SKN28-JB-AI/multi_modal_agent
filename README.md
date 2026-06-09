@@ -1,5 +1,14 @@
 # multi_modal_agent
 
+<!-- 데모 영상: title.mp4 는 이 README 와 같은 폴더에 함께 커밋되어야
+     GitHub 에서 인라인 플레이어로 재생됩니다(상대경로 참조). -->
+<p align="center">
+  <video src="title.mp4" controls muted playsinline width="720">
+    데모 영상을 재생할 수 없는 환경입니다 &mdash;
+    👉 <a href="title.mp4">title.mp4 내려받아 보기</a>
+  </video>
+</p>
+
 광고용 멀티모달 동영상 생성 백엔드 서비스 (FastAPI).
 
 텍스트 메시지 또는 **광고 기획서 PDF**를 입력받아, 선택한 비디오 생성 모델

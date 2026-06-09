@@ -182,6 +182,7 @@ class BackendInfo(BaseModel):
     supported_durations: list[float]
     supports_remix: bool = False
     supports_image_input: bool = False
+    supports_audio: bool = True
 
 
 class ModelsResponse(BaseModel):

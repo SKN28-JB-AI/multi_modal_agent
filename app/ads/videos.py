@@ -94,7 +94,10 @@ async def run_videos_stage(
             logger.warning("[ads/videos] ✗ %s", asset.error)
             continue
 
-        prompt = build_video_prompt(cut, storyboard, locale=options.locale)
+        prompt = build_video_prompt(
+            cut, storyboard, locale=options.locale,
+            include_voiceover=backend.audio_supported(),
+        )
         asset.prompt_used = prompt
         spec = ClipSpec(
             prompt=prompt,

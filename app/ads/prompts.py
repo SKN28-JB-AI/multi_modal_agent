@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from typing import Callable
 
+from .. import narration
 from .schemas import AdStoryboard, Cut
 
 # ====================================================================== #
@@ -38,6 +39,7 @@ _STORYBOARD_SYSTEM = """\
 - scene/visual 은 영상 생성 AI 가 그대로 그릴 수 있도록 구체적으로 묘사합니다
   (장소, 인물(얼굴이 화면에 정면 노출되지 않는 연출 권장), 행동, 색감, 조명).
 - sfx 에는 효과음·음악 큐를, voiceover 에는 성우 대사를 적습니다(없으면 빈 문자열).
+- 보이스오버 분량: {narration_hint}
 - 마지막 컷은 브랜드({brand}) 로고 리빌과 CTA(행동 유도)로 마무리합니다.
 - 금융 광고이므로 과장·허위 수익 약속 표현은 쓰지 않습니다.
 """
@@ -70,6 +72,7 @@ def build_storyboard_messages(
         cut_count=cut_count,
         total_duration_sec=total_duration_sec,
         brand=brand,
+        narration_hint=narration.storyboard_hint(locale),
     )
     user = _STORYBOARD_USER.format(
         prompt=prompt,
@@ -137,13 +140,21 @@ def build_image_prompt(provider_family: str, cut: Cut, sb: AdStoryboard) -> str:
 # ====================================================================== #
 # 3) 컷 비디오 생성 (이미지 → 비디오)
 # ====================================================================== #
-def build_video_prompt(cut: Cut, sb: AdStoryboard, locale: str = "ko-KR") -> str:
+def build_video_prompt(
+    cut: Cut,
+    sb: AdStoryboard,
+    locale: str = "ko-KR",
+    include_voiceover: bool = True,
+) -> str:
     """
     첫 프레임 이미지가 주어지는 image-to-video 프롬프트.
     장면·카메라·사운드(대사/효과음/음악)를 함께 서술하면 오디오 동기화
     품질이 올라간다(기존 운영 경험 반영).
+
+    보이스오버(cut.voiceover)는 컷 길이를 거의 꽉 채우도록 분량 지시를
+    함께 부착한다(narration.voiceover_line). include_voiceover=False 면
+    (무음 모델 등) 보이스오버 지시를 생략한다.
     """
-    lang = "Korean" if locale.lower().startswith("ko") else locale
     mood = ", ".join(sb.mood) if sb.mood else ""
     lines = [
         f"{cut.duration_sec}-second commercial shot starting exactly from "
@@ -157,10 +168,13 @@ def build_video_prompt(cut: Cut, sb: AdStoryboard, locale: str = "ko-KR") -> str
         lines.append(
             f"Music: {sb.music.genre}, {sb.music.bpm} BPM, beat-synced editing."
         )
-    if cut.sfx:
-        lines.append(f"Sound effects: {cut.sfx}")
-    if cut.voiceover:
-        lines.append(f'{lang} voiceover says: "{cut.voiceover}"')
-    if cut.transition:
-        lines.append(f"Ends with: {cut.transition}.")
+    if cut.sfx and cut.sfx.strip():
+        lines.append(f"Audio/SFX: {cut.sfx.strip()}.")
+    if include_voiceover and cut.voiceover and cut.voiceover.strip():
+        # 컷 길이에 맞춰 '꽉 채우는' 보이스오버 분량을 지시한다.
+        lines.append(
+            narration.voiceover_line(
+                cut.voiceover.strip(), cut.duration_sec, locale
+            )
+        )
     return "\n".join(lines)
