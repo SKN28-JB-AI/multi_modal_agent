@@ -21,10 +21,10 @@ from ..jobs import Job, JobStatus
 from ..schemas import (
     JobCreatedResponse, JobStatusResponse, RemixRequest, SceneStateOut,
 )
-from ..security import require_app_key
+from ..security import require_auth
 
 router = APIRouter(
-    prefix="/v1/jobs", tags=["jobs"], dependencies=[Depends(require_app_key)]
+    prefix="/v1/jobs", tags=["jobs"], dependencies=[Depends(require_auth)]
 )
 
 

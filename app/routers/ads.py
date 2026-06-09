@@ -63,12 +63,12 @@ from ..backends import (
     normalize_text_exposure,
 )
 from .logos import resolve_logo
-from ..security import require_app_key
+from ..security import require_auth
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
-    prefix="/v2/ads", tags=["ads"], dependencies=[Depends(require_app_key)]
+    prefix="/v2/ads", tags=["ads"], dependencies=[Depends(require_auth)]
 )
 
 

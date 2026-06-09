@@ -11,10 +11,10 @@ from fastapi import APIRouter, Depends, Request
 
 from ..backends import backend_info
 from ..schemas import BackendInfo, ModelsResponse
-from ..security import require_app_key
+from ..security import require_auth
 
 router = APIRouter(
-    prefix="/v1", tags=["models"], dependencies=[Depends(require_app_key)]
+    prefix="/v1", tags=["models"], dependencies=[Depends(require_auth)]
 )
 
 

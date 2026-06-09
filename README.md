@@ -83,6 +83,26 @@ python run.py                     # 또는:
 
 API 문서: http://localhost:8000/docs
 
+## 인증 (auth-server JWT + X-App-Key)
+
+보호 엔드포인트는 두 가지 중 하나로 인증한다(병행).
+
+1. **Bearer JWT** — auth-server(OAuth 2.1)가 발급한 RS256 토큰. `<AUTH_ISSUER>/jwks.json`
+   공개키로 자체 검증한다(인증서를 매 요청 호출하지 않음). 검증: RS256, iss 일치, exp/nbf, scope(기본 `api`).
+2. **X-App-Key** — 기존 정적 앱 키(서비스간 호출/프론트 호환).
+
+`AUTH_ISSUER`를 설정하면 JWT 검증이 켜진다. 참조 백엔드처럼 **iss 검증용 `AUTH_ISSUER`(외부 URL)와
+JWKS 획득용 `JWKS_URL`(컨테이너 내부 호스트 가능)를 분리**할 수 있다.
+
+```bash
+# JWT 사용(auth-server 로그인 후 받은 액세스 토큰)
+curl -H "Authorization: Bearer $ACCESS_TOKEN" localhost:8000/v1/models
+# 또는 기존 앱 키
+curl -H "X-App-Key: dev-key-change-me" localhost:8000/v1/models
+```
+
+> 설정: `AUTH_ISSUER`, `JWKS_URL`, `AUTH_REQUIRED_SCOPE`(기본 `api`), `AUTH_AUDIENCE`(선택), `AUTH_LEEWAY_SEC`. (.env.example 참고)
+
 ## 사용 예
 
 ```bash

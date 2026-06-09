@@ -14,7 +14,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
 
 
 class Settings(BaseSettings):
@@ -26,6 +30,25 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls,
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """
+        설정 소스 우선순위(높음→낮음): init > .env(dotenv) > 환경변수 > secrets.
+
+        pydantic-settings 기본 순서는 env > dotenv 라, 컨테이너/OS 환경변수가
+        .env 를 덮어쓴다. 본 서비스는 '소스의 .env 파일을 가장 우선'으로 사용하는
+        요구사항이라 dotenv 를 환경변수 앞에 둔다. 단, 명시적 init 인자(테스트/
+        프로그램적 주입)는 그대로 최상위를 유지한다.
+        """
+        return (init_settings, dotenv_settings, env_settings, file_secret_settings)
+
     # ------------------------------------------------------------------ #
     # 보안
     # ------------------------------------------------------------------ #
@@ -35,6 +58,23 @@ class Settings(BaseSettings):
 
     # CORS 허용 오리진(콤마 구분). 운영에서는 프론트 도메인으로 제한할 것.
     cors_origins: str = "*"
+
+    # ------------------------------------------------------------------ #
+    # auth-server(OAuth 2.1) JWT 자체검증 (X-App-Key 와 병행)
+    # ------------------------------------------------------------------ #
+    # 발급자(iss). 비어 있으면 JWT 검증 비활성(앱 키만 사용).
+    # 참조 백엔드(examples/backend)와 동일하게 ISSUER 와 JWKS_URL 을 분리한다:
+    # iss 는 외부 URL(예: http://localhost:9000), JWKS 는 컨테이너 내부 호스트
+    # (예: http://auth-server:9000/jwks.json) 로 가져올 수 있다.
+    auth_issuer: str = ""              # env: AUTH_ISSUER
+    jwks_url: str = ""                 # env: JWKS_URL (비면 auth_issuer + /jwks.json)
+    # 검증 대상(aud). 비어 있으면 aud 검증 생략(참조 백엔드와 동일).
+    auth_audience: str = ""            # env: AUTH_AUDIENCE
+    # 보호 API 호출에 필요한 스코프. 비우면 스코프 검증 생략.
+    auth_required_scope: str = "api"   # env: AUTH_REQUIRED_SCOPE
+    # exp/nbf 시계 오차 허용(초) + JWKS 캐시 TTL(초)
+    auth_leeway_sec: int = 5           # env: AUTH_LEEWAY_SEC
+    jwks_cache_lifespan_sec: int = 300 # env: JWKS_CACHE_LIFESPAN_SEC
 
     # ------------------------------------------------------------------ #
     # 외부 API 키 (해당 백엔드를 쓸 때만 필요)
@@ -157,6 +197,20 @@ class Settings(BaseSettings):
     @property
     def app_key_list(self) -> list[str]:
         return [k.strip() for k in self.app_keys.split(",") if k.strip()]
+
+    @property
+    def effective_jwks_url(self) -> str:
+        """JWKS_URL 명시값 우선, 없으면 auth_issuer 로부터 유도."""
+        if self.jwks_url.strip():
+            return self.jwks_url.strip()
+        if self.auth_issuer.strip():
+            return self.auth_issuer.rstrip("/") + "/jwks.json"
+        return ""
+
+    @property
+    def jwt_enabled(self) -> bool:
+        """발급자와 JWKS 가 모두 설정되어야 JWT 검증을 켠다."""
+        return bool(self.auth_issuer.strip() and self.effective_jwks_url)
 
     @property
     def cors_origin_list(self) -> list[str]:

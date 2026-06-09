@@ -1,0 +1,34 @@
+# ===== 빌드 컨텍스트 최소화 + 시크릿/잡동사니 제외 =====
+
+# 시크릿: .env 는 이미지에 굽지 않고 런타임에 마운트한다
+.env
+.env.*
+!.env.example
+
+# 버전관리
+.git/
+.gitignore
+
+# Python 캐시 / 빌드 산출물
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+pytest-cache-files-*/
+.cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# 런타임 생성물(잡/클립/최종본) — 이미지에 굽지 않음
+data/
+
+# 개발/문서/데모 자산 (런타임 이미지에 불필요)
+tests/
+requirements-dev.txt
+README.md
+title.mp4
+title_poster.png
+Dockerfile
+.dockerignore

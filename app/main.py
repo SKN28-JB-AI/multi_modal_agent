@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import __version__
 from .config import Settings
 from .ads.manager import AdJobManager
+from .auth import JwtVerifier
 from .jobs import JobManager
 from .pipeline.orchestrator import Orchestrator
 from .routers import ads as ads_router
@@ -58,6 +59,24 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     app.state.orchestrator = Orchestrator(settings, app.state.job_manager)
     # 광고 파이프라인(/v2/ads)은 기존 잡과 분리된 저장소를 쓴다.
     app.state.ad_job_manager = AdJobManager(settings.ad_jobs_dir)
+
+    # auth-server(OAuth 2.1) JWT 자체검증기. AUTH_ISSUER/JWKS 가 설정된 경우만
+    # 활성화되며, X-App-Key 와 병행한다(둘 중 하나로 인증 가능).
+    app.state.jwt_verifier = None
+    if settings.jwt_enabled:
+        app.state.jwt_verifier = JwtVerifier(
+            issuer=settings.auth_issuer,
+            jwks_url=settings.effective_jwks_url,
+            audience=settings.auth_audience,
+            required_scope=settings.auth_required_scope,
+            leeway_sec=settings.auth_leeway_sec,
+            cache_lifespan_sec=settings.jwks_cache_lifespan_sec,
+        )
+        logging.getLogger(__name__).info(
+            "JWT 인증 활성화: iss=%s jwks=%s scope=%r",
+            settings.auth_issuer, settings.effective_jwks_url,
+            settings.auth_required_scope or "(none)",
+        )
 
     # 라우터
     app.include_router(videos_router.router)

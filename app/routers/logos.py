@@ -21,10 +21,10 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from ..security import require_app_key
+from ..security import require_auth
 
 router = APIRouter(
-    prefix="/v1", tags=["logos"], dependencies=[Depends(require_app_key)]
+    prefix="/v1", tags=["logos"], dependencies=[Depends(require_auth)]
 )
 
 LOGO_EXTS = (".png", ".jpg", ".jpeg", ".webp")
