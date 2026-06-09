@@ -33,7 +33,15 @@ from pathlib import Path
 import httpx
 
 from ..config import Settings
-from .base import ClipGenerationError, ClipResult, ClipSpec, VideoBackend
+from .base import (
+    ClipGenerationError,
+    ClipResult,
+    ClipSpec,
+    VideoBackend,
+    apply_text_policy,
+    negative_for,
+    negative_prompt_for,
+)
 
 # 해상도 티어 순서(낮음→높음). 요청 티어가 미지원이면 가장 가까운 값으로 보정.
 _TIER_ORDER = ("480p", "720p", "1080p")
@@ -91,7 +99,12 @@ class WanBackend(VideoBackend):
         tier = self._pick_tier(spec.resolution)
 
         # 공통 input/parameters 구성. t2v/i2v 분기.
-        input_obj: dict = {"prompt": spec.prompt}
+        input_obj: dict = {
+            "prompt": apply_text_policy(spec.prompt, spec.text_exposure)
+        }
+        # 화면 글자 노출 단계에 따른 negative_prompt(full 이면 미설정)
+        if negative_for(spec.text_exposure):
+            input_obj["negative_prompt"] = negative_prompt_for(spec.text_exposure)
         parameters: dict = {
             "duration": duration,
             "prompt_extend": self.params.get("prompt_extend", True),

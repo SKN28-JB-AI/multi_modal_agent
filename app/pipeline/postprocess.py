@@ -113,18 +113,94 @@ def write_srt(storyboard: Storyboard, actual_durations: list[float],
     return True
 
 
-def burn_subtitles(video_path: Path, srt_path: Path, output_path: Path) -> None:
-    """SRT 자막을 영상에 굽는다(재인코딩). 폰트 환경에 따라 결과가 달라짐."""
-    ffmpeg = _ffmpeg()
-    # subtitles 필터의 경로 이스케이프(콜론/백슬래시/작은따옴표)
-    srt_escaped = (
-        str(srt_path.resolve())
+# 한글 자막 번인용 폰트 후보: (파일 경로, libass 가 인식하는 FontName).
+# FontName 은 파일명이 아니라 폰트의 '패밀리 이름'이어야 한다.
+_SUBTITLE_FONT_CANDIDATES: tuple[tuple[str, str], ...] = (
+    (r"C:\Windows\Fonts\malgun.ttf", "Malgun Gothic"),
+    ("/usr/share/fonts/truetype/nanum/NanumGothic.ttf", "NanumGothic"),
+    ("/usr/share/fonts/truetype/nanum/NanumGothic-Regular.ttf", "NanumGothic"),
+    ("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "Noto Sans CJK KR"),
+    ("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc", "Noto Sans CJK KR"),
+    ("/Library/Fonts/AppleGothic.ttf", "AppleGothic"),
+)
+
+
+def _resolve_subtitle_font(font_path: str | None) -> tuple[str, str] | None:
+    """
+    번인 자막에 쓸 (fontsdir, FontName) 을 결정한다.
+
+    우선순위:
+      1) 명시된 font_path (TTF/TTC). FontName 은 후보표에서 찾고, 없으면
+         파일 stem 을 사용.
+      2) OS 별 잘 알려진 한글 폰트(_SUBTITLE_FONT_CANDIDATES).
+    어느 것도 없으면 None(시스템 fontconfig 에 위임).
+    """
+    candidates: list[tuple[str, str]] = []
+    if font_path and font_path.strip():
+        fp = font_path.strip()
+        known = dict(_SUBTITLE_FONT_CANDIDATES)
+        family = known.get(fp) or Path(fp).stem
+        candidates.append((fp, family))
+    candidates.extend(_SUBTITLE_FONT_CANDIDATES)
+
+    for fp, family in candidates:
+        path = Path(fp)
+        if path.is_file():
+            return str(path.parent), family
+    return None
+
+
+def _escape_subtitles_path(path: Path) -> str:
+    """subtitles/필터 인자용 경로 이스케이프(콜론/백슬래시/작은따옴표)."""
+    return (
+        str(path.resolve())
         .replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
     )
+
+
+def burn_subtitles(
+    video_path: Path,
+    srt_path: Path,
+    output_path: Path,
+    font_path: str | None = None,
+    font_size: int = 24,
+) -> None:
+    """
+    SRT 자막을 영상에 굽는다(재인코딩).
+
+    [글자 깨짐 방지]
+    한글 폰트(FontName)와 fontsdir 을 명시해 libass 가 올바른 글리프를
+    쓰게 한다. 폰트를 못 찾으면 시스템 fontconfig 에 위임하되, 가독성을
+    위한 외곽선/그림자 스타일은 항상 적용한다.
+    """
+    ffmpeg = _ffmpeg()
+    srt_escaped = _escape_subtitles_path(srt_path)
+
+    # 가독성 스타일(외곽선+그림자) — 한글/배경 대비 확보
+    style_parts = [
+        f"Fontsize={font_size}",
+        "PrimaryColour=&H00FFFFFF",   # 흰색 글자
+        "OutlineColour=&H00000000",   # 검정 외곽선
+        "BorderStyle=1",
+        "Outline=2",
+        "Shadow=1",
+        "MarginV=40",
+    ]
+
+    resolved = _resolve_subtitle_font(font_path)
+    sub_arg = f"subtitles='{srt_escaped}'"
+    if resolved is not None:
+        fontsdir, family = resolved
+        style_parts.insert(0, f"FontName={family}")
+        fontsdir_escaped = _escape_subtitles_path(Path(fontsdir))
+        sub_arg += f":fontsdir='{fontsdir_escaped}'"
+
+    sub_arg += ":force_style='" + ",".join(style_parts) + "'"
+
     _run(
         [
             ffmpeg, "-y", "-i", str(video_path),
-            "-vf", f"subtitles='{srt_escaped}'",
+            "-vf", sub_arg,
             "-c:a", "copy", str(output_path),
         ],
         "자막 번인",
@@ -272,3 +348,99 @@ def overlay_logo(
         ],
         "로고 오버레이",
     )
+
+
+# ---------------------------------------------------------------------- #
+# 로고 아웃트로(엔드카드) — 광고 마지막에 로고 페이지를 붙인다.
+# 후처리이므로 어떤 비디오 모델(Sora/Veo/LTX/Wan)로 만든 영상에도 동일 적용.
+# ---------------------------------------------------------------------- #
+def _video_dimensions(video_path: Path) -> tuple[int, int]:
+    """영상의 (width, height)를 ffprobe 로 얻는다. 실패 시 1920x1080."""
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        return (1920, 1080)
+    proc = subprocess.run(
+        [ffprobe, "-v", "error", "-select_streams", "v:0",
+         "-show_entries", "stream=width,height",
+         "-of", "csv=s=x:p=0", str(video_path)],
+        capture_output=True, text=True,
+    )
+    try:
+        w, h = proc.stdout.strip().splitlines()[0].split("x")
+        return (int(w), int(h))
+    except (ValueError, IndexError):
+        return (1920, 1080)
+
+
+def _bg_to_ffmpeg_color(bg: str) -> str:
+    """'#134A8E' / '134A8E' → ffmpeg color('0x134A8E'). 형식 오류 시 네이비."""
+    import re
+
+    v = (bg or "").strip().lstrip("#")
+    if not re.fullmatch(r"[0-9A-Fa-f]{6}", v):
+        v = "134A8E"
+    return f"0x{v.upper()}"
+
+
+def make_logo_outro(
+    logo_path: Path,
+    reference_video: Path,
+    out_path: Path,
+    duration_sec: float = 2.5,
+    bg_hex: str = "#134A8E",
+    fade_sec: float = 0.4,
+    scale_ratio: float = 0.42,
+) -> None:
+    """
+    로고를 가운데 배치한 엔드카드 영상을 만든다.
+
+    - reference_video 의 해상도/오디오 유무에 맞춰 생성하여, 본편과
+      자연스럽게 이어 붙일(concat) 수 있게 한다.
+    - bg_hex 배경 단색 위에 로고를 중앙 배치하고 페이드 인/아웃.
+    - 본편에 오디오가 있으면 무음 스테레오 트랙을 넣어 스트림 구성을 맞춘다.
+    """
+    ffmpeg = _ffmpeg()
+    w, h = _video_dimensions(reference_video)
+    with_audio = _has_audio_stream(reference_video)
+    dur = max(0.5, float(duration_sec))
+    fade = max(0.0, min(float(fade_sec), dur / 2))
+    logo_w = max(48, int(w * max(0.05, min(scale_ratio, 0.95))))
+    color = _bg_to_ffmpeg_color(bg_hex)
+
+    inputs = [
+        "-f", "lavfi", "-i", f"color=c={color}:s={w}x{h}:r=25:d={dur:.3f}",
+        "-loop", "1", "-i", str(logo_path),
+    ]
+    # 로고: 프레임을 넘지 않도록 폭/높이 동시 제한 후 중앙 오버레이 + 페이드.
+    vchain = (
+        f"[1:v]scale={logo_w}:-1:force_original_aspect_ratio=decrease,"
+        f"format=rgba[lg];"
+        f"[0:v][lg]overlay=(W-w)/2:(H-h)/2:shortest=1"
+    )
+    if fade > 0:
+        vchain += (
+            f",fade=t=in:st=0:d={fade:.2f},"
+            f"fade=t=out:st={max(0.0, dur - fade):.2f}:d={fade:.2f}"
+        )
+    vchain += "[v]"
+
+    cmd = [ffmpeg, "-y", *inputs]
+    maps = ["-map", "[v]"]
+    if with_audio:
+        cmd += ["-f", "lavfi", "-i",
+                "anullsrc=channel_layout=stereo:sample_rate=44100"]
+        maps += ["-map", "2:a"]
+    cmd += [
+        "-filter_complex", vchain, *maps,
+        "-t", f"{dur:.3f}",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "25",
+    ]
+    if with_audio:
+        cmd += ["-c:a", "aac", "-shortest"]
+    cmd += [str(out_path)]
+    _run(cmd, "로고 아웃트로 생성")
+
+
+def append_outro(main_video: Path, outro: Path, output_path: Path) -> None:
+    """본편 뒤에 아웃트로를 이어 붙인다(concat, 필요 시 재인코딩)."""
+    concat_clips([main_video, outro], output_path)

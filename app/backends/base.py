@@ -26,6 +26,124 @@ from typing import Optional, Type
 from ..config import Settings
 
 
+# ---------------------------------------------------------------------- #
+# 글자 깨짐 방지 + 단계별 글자 노출 (text-exposure policy)
+# ---------------------------------------------------------------------- #
+# AI 비디오 모델은 화면 글자(특히 한글 등 비라틴)를 거의 항상 깨뜨린다.
+# 그렇다고 글자를 완전히 없애면 광고가 어색해지므로, '모델이 직접 그리는
+# 글자'의 허용 수준을 4단계로 제어한다. 또렷하게 읽혀야 하는 한글 카피·자막·
+# 로고는 모델이 아니라 후처리(자막 번인/오버레이, 실폰트)로 입히는 것을 권장한다.
+#
+#   none     : 화면 글자 완전 금지(가장 깔끔하나 밋밋할 수 있음)
+#   minimal  : 또렷한 카피/자막/UI/워터마크는 금지하되, 배경 간판·제품 표면 등
+#              장면에 자연스러운 '환경 텍스트'는 흐릿하게 허용(기본값)
+#   moderate : 짧고 명료한 라틴 글자/숫자/간판은 허용. 단 한글 등 비라틴은
+#              여전히 억제(깨짐 방지)
+#   full     : 제한 없음(모델 자유, 깨짐 위험은 사용자 책임)
+#
+# (대사/내레이션은 '음성'이며 화면 글자가 아니므로 모든 단계에서 영향 없음.)
+
+TEXT_EXPOSURE_LEVELS = ("none", "minimal", "moderate", "full")
+DEFAULT_TEXT_EXPOSURE = "minimal"
+
+# 단계별 '긍정 프롬프트' 클로즈(full 은 빈 문자열).
+_TEXT_CLAUSES: dict[str, str] = {
+    "none": (
+        "Absolutely no on-screen text, letters, words, captions, subtitles, "
+        "numbers, signage, UI, watermark, or logo of any kind. Purely visual, "
+        "text-free footage; any wording is delivered only as spoken voiceover."
+    ),
+    "minimal": (
+        "Do not add overlaid captions, subtitles, title cards, large readable "
+        "text, watermark, logo, or UI. Only incidental, out-of-focus background "
+        "or environmental text (distant signage, product surfaces) may appear "
+        "naturally and must never be a focal element. Never render Korean or any "
+        "non-Latin script."
+    ),
+    "moderate": (
+        "Avoid garbled or distorted lettering. Short, clear Latin words, numbers, "
+        "or natural signage may appear when they fit the scene, but do not render "
+        "Korean or other non-Latin scripts (those are added in post-production)."
+    ),
+    "full": "",
+}
+
+# 단계별 negative_prompt 금지어(full 은 빈 문자열 → 제약 없음).
+_TEXT_NEGATIVES: dict[str, str] = {
+    "none": (
+        "text, letters, words, captions, subtitles, title cards, typography, "
+        "writing, signage, watermark, logo, gibberish text, distorted text, "
+        "garbled characters, hangul text, on-screen text, UI elements"
+    ),
+    "minimal": (
+        "captions, subtitles, title cards, large on-screen text, watermark, logo, "
+        "UI elements, gibberish text, distorted text, garbled characters, "
+        "hangul text, korean text, non-latin text"
+    ),
+    "moderate": (
+        "gibberish text, distorted text, garbled characters, malformed letters, "
+        "hangul text, korean text, non-latin text"
+    ),
+    "full": "",
+}
+
+# 하위호환 별칭(기존 import/none 단계).
+NO_TEXT_CLAUSE = _TEXT_CLAUSES["none"]
+NO_TEXT_NEGATIVE = _TEXT_NEGATIVES["none"]
+
+
+def normalize_text_exposure(level: str | None) -> str:
+    """글자 노출 단계 문자열을 검증·정규화한다(모르면 기본값)."""
+    if not level:
+        return DEFAULT_TEXT_EXPOSURE
+    v = str(level).strip().lower()
+    return v if v in TEXT_EXPOSURE_LEVELS else DEFAULT_TEXT_EXPOSURE
+
+
+def text_clause_for(level: str | None) -> str:
+    """단계에 해당하는 긍정 프롬프트 클로즈(full 은 '')."""
+    return _TEXT_CLAUSES[normalize_text_exposure(level)]
+
+
+def negative_for(level: str | None) -> str:
+    """단계에 해당하는 negative 금지어(full 은 '')."""
+    return _TEXT_NEGATIVES[normalize_text_exposure(level)]
+
+
+def apply_text_policy(prompt: str, level: str | None = None) -> str:
+    """긍정 프롬프트에 단계별 글자 노출 클로즈를 1회 부착한다."""
+    clause = text_clause_for(level)
+    base = (prompt or "").rstrip()
+    if not clause or clause in base:
+        return base
+    sep = "\n" if base else ""
+    return f"{base}{sep}{clause}"
+
+
+def negative_prompt_for(level: str | None, existing: str | None = None) -> str:
+    """기존 negative 에 단계별 금지어를 합친다(full 이면 기존만 반환)."""
+    neg = negative_for(level)
+    existing = (existing or "").strip()
+    if not neg:
+        return existing
+    if not existing:
+        return neg
+    if neg in existing:
+        return existing
+    return f"{existing}, {neg}"
+
+
+# --- 하위호환 헬퍼(none 단계로 동작) ---
+def with_no_text_clause(prompt: str) -> str:
+    """[deprecated] none 단계 클로즈 부착. apply_text_policy(p, 'none') 와 동일."""
+    return apply_text_policy(prompt, "none")
+
+
+def merge_negative_prompt(existing: str | None) -> str:
+    """[deprecated] none 단계 negative 병합. negative_prompt_for('none', e) 와 동일."""
+    return negative_prompt_for("none", existing)
+
+
 @dataclass
 class ClipSpec:
     """클립 1개 생성 사양 (백엔드 공통 입력)."""
@@ -39,6 +157,9 @@ class ClipSpec:
     # image-to-video: 시작 프레임 이미지 경로(지원 백엔드만 사용).
     # None 이면 기존과 동일한 text-to-video 로 동작한다.
     first_frame: Optional[Path] = None
+    # 화면 글자 노출 단계: none / minimal / moderate / full (DEFAULT_TEXT_EXPOSURE).
+    # 모델이 직접 그리는 글자의 허용 수준을 제어한다(또렷한 한글은 후처리 권장).
+    text_exposure: str = "minimal"
 
 
 @dataclass

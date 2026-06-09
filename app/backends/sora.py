@@ -23,7 +23,13 @@ import time
 from pathlib import Path
 
 from ..config import Settings
-from .base import ClipGenerationError, ClipResult, ClipSpec, VideoBackend
+from .base import (
+    ClipGenerationError,
+    ClipResult,
+    ClipSpec,
+    VideoBackend,
+    apply_text_policy,
+)
 
 # (resolution, aspect_ratio) → Sora size 문자열
 _SIZE_MAP = {
@@ -67,7 +73,10 @@ class SoraBackend(VideoBackend):
     ) -> ClipResult:
         client = self._client()
         create_kwargs: dict = dict(
-            model=model, prompt=spec.prompt, seconds=seconds, size=size
+            model=model,
+            prompt=apply_text_policy(spec.prompt, spec.text_exposure),
+            seconds=seconds,
+            size=size,
         )
         # image-to-video: input_reference 는 요청 size 와 픽셀 단위로
         # 정확히 일치해야 하므로 업로드 직전에 cover-crop 으로 맞춘다.

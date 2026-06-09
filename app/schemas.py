@@ -20,6 +20,8 @@ from pydantic import BaseModel, Field
 
 AspectRatio = Literal["16:9", "9:16"]
 Resolution = Literal["720p", "1080p"]
+# 화면 글자 노출 단계(모델이 직접 그리는 글자의 허용 수준)
+TextExposure = Literal["none", "minimal", "moderate", "full"]
 
 
 # ---------------------------------------------------------------------- #
@@ -57,6 +59,23 @@ class GenerationOptions(BaseModel):
     aspect_ratio: AspectRatio = "16:9"
     resolution: Resolution = "1080p"
     generate_audio: bool = True
+    text_exposure: Optional[TextExposure] = Field(
+        default=None,
+        description=(
+            "화면 글자 노출 단계: none(완전 금지)/minimal(환경 텍스트만)/"
+            "moderate(짧은 라틴 글자 허용)/full(제한 없음). 미지정 시 서버 기본값"
+            "(TEXT_EXPOSURE_DEFAULT, 기본 minimal). 또렷한 한글은 모델이 아니라 "
+            "후처리 자막/오버레이로 입히는 것을 권장한다."
+        ),
+    )
+    logo_outro: Optional[bool] = Field(
+        default=None,
+        description=(
+            "광고 마지막에 로고 엔드카드(아웃트로)를 붙일지 여부. 미지정 시 "
+            "서버 기본값(LOGO_OUTRO_ENABLED, 기본 false). 배경색은 요청 시점에 "
+            "LLM 이 추천하며(키 없으면 브랜드 색 폴백), 모든 비디오 모델에 적용된다."
+        ),
+    )
 
 
 class MessageRequest(GenerationOptions):
@@ -74,6 +93,15 @@ class MessageRequest(GenerationOptions):
             "비디오 생성 전 OpenAI 기본 모델로 프롬프트를 비디오 모델 맞춤형으로 "
             "변환할지 여부. 미지정 시 서버 기본값(ENHANCE_MESSAGE_PROMPT)을 따른다. "
             "OpenAI 키가 없거나 변환 실패 시 원본 프롬프트로 자동 폴백한다."
+        ),
+    )
+    language: str = Field(
+        default="ko",
+        description=(
+            "대사/내레이션(보이스오버) 언어. 미지정 시 한국어(ko)로 제작한다. "
+            "예: ko, en, ja, zh. 'ko-KR' / 'korean' 같은 표기도 허용된다. "
+            "화면 묘사는 모델 성능을 위해 항상 영어로 작성되며, 이 설정은 "
+            "오직 발화 언어에만 적용된다."
         ),
     )
 

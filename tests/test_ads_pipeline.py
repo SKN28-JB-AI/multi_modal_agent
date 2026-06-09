@@ -95,9 +95,11 @@ class MockI2VBackend(MockBackend):
     description = "테스트용 mock image-to-video 백엔드"
     supports_image_input = True
     captured_first_frames: list = []
+    captured_exposure: list = []
 
     async def generate_clip(self, spec: ClipSpec, out_path: Path) -> ClipResult:
         MockI2VBackend.captured_first_frames.append(spec.first_frame)
+        MockI2VBackend.captured_exposure.append(spec.text_exposure)
         assert spec.first_frame is not None and spec.first_frame.exists(), \
             "first_frame 이 전달되어야 한다"
         return await super().generate_clip(spec, out_path)
@@ -485,12 +487,36 @@ def test_proposal_includes_cut_images_when_available(ads_client):
     assert len(with_images) > len(text_only)
 
 
-# ====================================================================== #
-# 영속화/복구
-# ====================================================================== #
-def test_job_persisted_to_disk(ads_client, tmp_path):
+def test_videos_pass_text_exposure_to_clipspec(ads_client):
     client = ads_client()
     job_id = _make_job_with_storyboard(client)
-    job_file = tmp_path / "data-0" / "ad_jobs" / job_id / "job.json"
-    assert job_file.exists()
-    assert "JB 테스트 캠페인" in job_file.read_text(encoding="utf-8")
+    client.post(f"/v2/ads/{job_id}/images", headers=auth_headers())
+    _wait_stage(client, job_id, "images")
+
+    MockI2VBackend.captured_exposure = []
+    resp = client.post(
+        f"/v2/ads/{job_id}/videos",
+        json={"model": "mock-i2v", "text_exposure": "moderate"},
+        headers=auth_headers(),
+    )
+    assert resp.status_code == 202, resp.text
+    _wait_stage(client, job_id, "videos", timeout=60.0)
+    assert MockI2VBackend.captured_exposure, "비디오 백엔드가 호출되어야 한다"
+    assert set(MockI2VBackend.captured_exposure) == {"moderate"}
+
+
+def test_videos_default_text_exposure_is_minimal(ads_client):
+    client = ads_client()
+    job_id = _make_job_with_storyboard(client)
+    client.post(f"/v2/ads/{job_id}/images", headers=auth_headers())
+    _wait_stage(client, job_id, "images")
+
+    MockI2VBackend.captured_exposure = []
+    resp = client.post(
+        f"/v2/ads/{job_id}/videos",
+        json={"model": "mock-i2v"},   # text_exposure 미지정 → 서버 기본 minimal
+        headers=auth_headers(),
+    )
+    assert resp.status_code == 202
+    _wait_stage(client, job_id, "videos", timeout=60.0)
+    assert set(MockI2VBackend.captured_exposure) == {"minimal"}

@@ -20,7 +20,15 @@ import time
 from pathlib import Path
 
 from ..config import Settings
-from .base import ClipGenerationError, ClipResult, ClipSpec, VideoBackend
+from .base import (
+    ClipGenerationError,
+    ClipResult,
+    ClipSpec,
+    VideoBackend,
+    apply_text_policy,
+    negative_for,
+    negative_prompt_for,
+)
 
 
 class VeoBackend(VideoBackend):
@@ -59,6 +67,12 @@ class VeoBackend(VideoBackend):
             "aspect_ratio": spec.aspect_ratio,
             "resolution": spec.resolution,
         }
+        # 화면 글자 노출 단계에 따른 negative_prompt(full 이면 미설정)
+        _neg = negative_for(spec.text_exposure)
+        if _neg:
+            config_kwargs["negative_prompt"] = negative_prompt_for(
+                spec.text_exposure
+            )
 
         # image-to-video: 첫 프레임 이미지를 함께 전달한다.
         submit_kwargs: dict = {}
@@ -86,7 +100,7 @@ class VeoBackend(VideoBackend):
             try:
                 operation = client.models.generate_videos(
                     model=model,
-                    prompt=spec.prompt,
+                    prompt=apply_text_policy(spec.prompt, spec.text_exposure),
                     config=types.GenerateVideosConfig(**attempt_kwargs),
                     **submit_kwargs,
                 )

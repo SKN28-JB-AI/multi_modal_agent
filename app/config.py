@@ -109,6 +109,19 @@ class Settings(BaseSettings):
     image_retries: int = 1
     # 기획서 PDF 한글 폰트 TTF 경로 (미지정 시 OS 폰트 자동 탐색)
     ad_pdf_font_path: str = ""
+    # 광고 마지막 로고 아웃트로(엔드카드). 기본은 옵션(요청 logo_outro=true 시).
+    logo_outro_enabled: bool = False
+    logo_outro_duration_sec: float = 2.5
+    logo_outro_fade_sec: float = 0.4
+    logo_outro_scale_ratio: float = 0.42   # 로고 폭 = 프레임 폭 × 비율
+    # 배경색 폴백(LLM 추천 실패/키 없음 시). JB 브랜드 네이비.
+    logo_outro_bg_default: str = "#134A8E"
+    # 화면 글자 노출 기본 단계: none / minimal / moderate / full.
+    # 요청에서 text_exposure 로 건당 덮어쓸 수 있다.
+    text_exposure_default: str = "minimal"
+    # 자막 번인(burn_subtitles)에 쓸 한글 폰트 TTF/TTC 경로.
+    # 미지정 시 OS 별 한글 폰트(맑은고딕/나눔/Noto CJK)를 자동 탐색한다.
+    subtitle_font_path: str = ""
 
     # ------------------------------------------------------------------ #
     # 내레이션(TTS) — 선택 기능

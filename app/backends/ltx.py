@@ -22,7 +22,14 @@ from pathlib import Path
 import httpx
 
 from ..config import Settings
-from .base import ClipGenerationError, ClipResult, ClipSpec, VideoBackend
+from .base import (
+    ClipGenerationError,
+    ClipResult,
+    ClipSpec,
+    VideoBackend,
+    apply_text_policy,
+    negative_prompt_for,
+)
 
 
 class LtxBackend(VideoBackend):
@@ -44,7 +51,8 @@ class LtxBackend(VideoBackend):
         resolution = "1080p" if spec.resolution == "720p" else spec.resolution
 
         payload = {
-            "prompt": spec.prompt,
+            "prompt": apply_text_policy(spec.prompt, spec.text_exposure),
+            "negative_prompt": negative_prompt_for(spec.text_exposure),
             "duration": duration,
             "resolution": resolution,
             "aspect_ratio": spec.aspect_ratio,

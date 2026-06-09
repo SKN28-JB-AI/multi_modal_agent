@@ -56,7 +56,13 @@ from ..ads.schemas import (
 )
 from ..ads.storyboard import generate_storyboard
 from ..ads.videos import VideosStageError, run_videos_stage
-from ..backends import BackendNotConfigured, available_models, get_backend
+from ..backends import (
+    BackendNotConfigured,
+    available_models,
+    get_backend,
+    normalize_text_exposure,
+)
+from .logos import resolve_logo
 from ..security import require_app_key
 
 logger = logging.getLogger(__name__)
@@ -278,6 +284,22 @@ async def create_cut_videos(
                 f"images 단계를 다시 실행하세요(?force=true)."
             ),
         )
+    text_exposure = normalize_text_exposure(
+        (body.text_exposure if body and body.text_exposure else None)
+        or settings.text_exposure_default
+    )
+    # 로고 아웃트로(opt-in): 요청 > 서버 기본. 로고는 logos/ 기본 파일.
+    _outro_override = body.logo_outro if body else None
+    logo_outro = (
+        bool(_outro_override) if _outro_override is not None
+        else settings.logo_outro_enabled
+    )
+    outro_logo = None
+    if logo_outro:
+        try:
+            outro_logo = resolve_logo(Path(settings.logos_dir), None)
+        except Exception:  # noqa: BLE001
+            outro_logo = None
     manager.update(job, video_model=model)
 
     async def _run() -> None:
@@ -290,6 +312,9 @@ async def create_cut_videos(
                 options=job.options,
                 image_paths=image_paths,
                 out_dir=manager.videos_dir(job.id),
+                text_exposure=text_exposure,
+                logo_outro=logo_outro,
+                logo_path=outro_logo,
             )
             manager.update(job, videos=assets, final_video_path=final_path)
             manager.finish_stage(job, "videos")

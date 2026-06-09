@@ -114,6 +114,20 @@ class AdVideosRequest(BaseModel):
         description="비디오 백엔드 이름 (GET /v1/models 참고). "
                     "미지정 시 서버 기본값.",
     )
+    text_exposure: Optional[Literal["none", "minimal", "moderate", "full"]] = Field(
+        default=None,
+        description=(
+            "화면 글자 노출 단계: none/minimal/moderate/full. 미지정 시 서버 "
+            "기본값(TEXT_EXPOSURE_DEFAULT, 기본 minimal)."
+        ),
+    )
+    logo_outro: Optional[bool] = Field(
+        default=None,
+        description=(
+            "광고 마지막에 로고 엔드카드(아웃트로)를 붙일지 여부. 미지정 시 "
+            "서버 기본값(LOGO_OUTRO_ENABLED, 기본 false). 배경색은 LLM 추천."
+        ),
+    )
 
 
 # ====================================================================== #

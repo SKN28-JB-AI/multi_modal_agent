@@ -20,7 +20,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from ..backends import ClipSpec, get_backend
+from ..backends import ClipSpec, get_backend, normalize_text_exposure
 from ..config import Settings
 from ..jobs import Job, JobManager, JobStatus, SceneState
 from ..schemas import PdfJobOptions, Scene, Storyboard
@@ -31,9 +31,32 @@ logger = logging.getLogger(__name__)
 
 # 보이스오버 지시문에 쓸 언어 표기 (비디오 모델은 영어 지시문 + 대상 언어명 조합이 가장 안정적)
 _LANGUAGE_NAMES = {
-    "ko": "Korean", "en": "English", "ja": "Japanese",
-    "zh": "Chinese", "es": "Spanish", "fr": "French", "de": "German",
+    "ko": "Korean", "en": "English", "ja": "Japanese", "zh": "Chinese",
+    "es": "Spanish", "fr": "French", "de": "German", "vi": "Vietnamese",
 }
+
+# 'korean' / 'ko-KR' 등 다양한 표기를 2글자 코드로 정규화. 비거나 모르면 ko.
+_LANGUAGE_ALIASES = {
+    "korean": "ko", "english": "en", "japanese": "ja", "chinese": "zh",
+    "spanish": "es", "french": "fr", "german": "de", "vietnamese": "vi",
+}
+
+
+def _normalize_language(value: str | None) -> str:
+    """
+    대사/내레이션 언어 문자열을 정규화한다.
+    - 비어 있으면 기본값 'ko'(한국인 대상)로 처리한다.
+    - 'ko-KR', 'ko_KR', 'KO' → 'ko'
+    - 'korean' → 'ko'
+    - 알 수 없는 코드는 소문자 그대로 둔다(언어명 표기에 사용).
+    """
+    if not value or not str(value).strip():
+        return "ko"
+    v = str(value).strip().lower().replace("_", "-")
+    base = v.split("-", 1)[0]
+    if base in _LANGUAGE_NAMES:
+        return base
+    return _LANGUAGE_ALIASES.get(base, base or "ko")
 
 
 def get_llm(settings: Settings):
@@ -104,7 +127,11 @@ class Orchestrator:
                 aspect_ratio=req.get("aspect_ratio") or "16:9",
                 resolution=req.get("resolution") or "1080p",
                 duration_sec=duration,
-                language="ko",
+                language=_normalize_language(req.get("language")),
+                text_exposure=normalize_text_exposure(
+                    req.get("text_exposure")
+                    or self.settings.text_exposure_default
+                ),
             )
         except Exception as exc:  # noqa: BLE001 - 변환 실패는 비치명(원본 폴백)
             logger.warning(
@@ -284,6 +311,12 @@ class Orchestrator:
             )
             current = branded
 
+        # 로고 아웃트로(엔드카드) — opt-in. 모든 모델 공통 후처리.
+        current = await self._maybe_append_outro(
+            job, storyboard, current, None,
+            logo if logo.exists() else None,
+        )
+
         final_path = job_dir / "final.mp4"
         if current != final_path:
             await asyncio.to_thread(_replace, current, final_path)
@@ -323,7 +356,13 @@ class Orchestrator:
             options.generate_audio if options
             else req.get("generate_audio", True)
         )
-        language = options.language if options else "ko"
+        language = _normalize_language(
+            options.language if options else req.get("language")
+        )
+        text_exposure = normalize_text_exposure(
+            (options.text_exposure if options else req.get("text_exposure"))
+            or settings.text_exposure_default
+        )
         # TTS 내레이션(enable_narration)을 쓸 때는 모델 발화를 빼서
         # 목소리가 이중으로 겹치지 않게 한다.
         embed_narration = not (options and options.enable_narration)
@@ -343,6 +382,7 @@ class Orchestrator:
                 resolution=resolution,
                 generate_audio=gen_audio,
                 index=scene.index,
+                text_exposure=text_exposure,
             )
             out_path = clips_dir / f"scene_{scene.index:02d}.mp4"
             attempts = settings.clip_retries + 1
@@ -434,6 +474,9 @@ class Orchestrator:
             resolution=options.resolution,
             generate_audio=options.generate_audio,
             index=0,
+            text_exposure=normalize_text_exposure(
+                options.text_exposure or settings.text_exposure_default
+            ),
         )
         out_path = clips_dir / "scene_00.mp4"
         state.status = "generating"
@@ -546,7 +589,8 @@ class Orchestrator:
         if has_srt and options and options.burn_subtitles:
             burned = job_dir / "merged_subtitled.mp4"
             await asyncio.to_thread(
-                postprocess.burn_subtitles, current, srt_path, burned
+                postprocess.burn_subtitles, current, srt_path, burned,
+                self.settings.subtitle_font_path,
             )
             current = burned
 
@@ -580,6 +624,11 @@ class Orchestrator:
             )
             current = branded
 
+        # 로고 아웃트로(엔드카드) — opt-in. 모든 모델 공통 후처리.
+        current = await self._maybe_append_outro(
+            job, storyboard, current, options, logo_path
+        )
+
         final_path = job_dir / "final.mp4"
         if current != final_path:
             await asyncio.to_thread(_replace, current, final_path)
@@ -593,6 +642,71 @@ class Orchestrator:
             scenes=scene_states,
         )
         logger.info("잡 %s 완료: %s", job.id, final_path)
+
+    async def _maybe_append_outro(
+        self, job: Job, storyboard: Storyboard, current: Path,
+        options: Optional[PdfJobOptions], logo_path: Optional[Path],
+    ) -> Path:
+        """
+        광고 마지막에 로고 아웃트로(엔드카드)를 붙인다(opt-in).
+        - 활성화: 요청 logo_outro > 서버 logo_outro_enabled.
+        - 로고: 업로드/지정 로고(logo_path) > logos/ 기본 로고.
+        - 배경색: 요청 시점에 LLM 추천(키 없거나 실패 시 브랜드 색 폴백).
+        실패해도 본편을 그대로 반환한다(비치명).
+        """
+        settings = self.settings
+        enabled = settings.logo_outro_enabled
+        override = (
+            options.logo_outro if options is not None
+            else job.request.get("logo_outro")
+        )
+        if override is not None:
+            enabled = bool(override)
+        if not enabled:
+            return current
+
+        # 로고 결정: 명시 로고 > logos/ 기본
+        outro_logo = logo_path
+        if outro_logo is None:
+            try:
+                from ..routers.logos import resolve_logo
+
+                outro_logo = resolve_logo(Path(settings.logos_dir), None)
+            except Exception:  # noqa: BLE001
+                outro_logo = None
+        if outro_logo is None or not Path(outro_logo).exists():
+            logger.info("잡 %s: 아웃트로용 로고가 없어 생략", job.id)
+            return current
+
+        try:
+            from ..llm.openai_llm import recommend_outro_background
+
+            context = " / ".join(
+                x for x in [
+                    storyboard.title,
+                    job.request.get("prompt", ""),
+                ] if x
+            ) or (storyboard.title or "advertisement")
+            bg = await recommend_outro_background(
+                settings, context, brand="",
+                fallback=settings.logo_outro_bg_default,
+            )
+            outro = self.manager.job_dir(job.id) / "outro.mp4"
+            await asyncio.to_thread(
+                postprocess.make_logo_outro,
+                Path(outro_logo), current, outro,
+                settings.logo_outro_duration_sec, bg,
+                settings.logo_outro_fade_sec, settings.logo_outro_scale_ratio,
+            )
+            combined = self.manager.job_dir(job.id) / "with_outro.mp4"
+            await asyncio.to_thread(
+                postprocess.append_outro, current, outro, combined
+            )
+            logger.info("잡 %s: 로고 아웃트로 추가(배경 %s)", job.id, bg)
+            return combined
+        except Exception as exc:  # noqa: BLE001 - 아웃트로 실패는 비치명
+            logger.warning("잡 %s: 아웃트로 추가 실패(본편 유지): %s", job.id, exc)
+            return current
 
     # ------------------------------------------------------------------ #
     @staticmethod

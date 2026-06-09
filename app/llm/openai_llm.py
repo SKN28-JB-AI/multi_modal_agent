@@ -82,12 +82,35 @@ Rules:
 - Output ONLY the rewritten prompt text. No preamble, no quotes, no markdown, no labels.
 - Write the cinematic description in English (these models perform best in English).
 - Be concrete about: subject and action, setting, camera work (shot size, movement), lighting and color palette, mood, and pacing for a {duration:.0f}-second {aspect_ratio} clip.
-- Keep brand-safe, realistic commercial tone. Do NOT invent on-screen text, logos, watermarks, or real public figures.
-- If the user's idea implies spoken narration or dialogue, you MAY keep one short quoted line and name the speaking language as {language_name}; otherwise omit speech.
+- Keep brand-safe, realistic commercial tone. Never depict real public figures.
+- On-screen text policy ({text_policy}): {text_policy_rule}
+- The target audience speaks {language_name}, so ANY spoken narration or voiceover MUST be written in {language_name} (this is the default even if the user did not specify a language). If the idea implies speech, keep at most one short spoken line, written in {language_name}; otherwise omit speech entirely. Never place that line as on-screen text.
 - Preserve the user's core intent and any specific products, places, or constraints they mentioned. Do not contradict them.
 - Target video model family: {model_family}. Tailor phrasing to what that family handles best, but keep it a single flowing prompt (no shot lists, no numbered steps).
 - Keep it under roughly 120 words.
 """
+
+
+_TEXT_POLICY_RULES = {
+    "none": (
+        "Describe a purely visual, text-free scene. Do NOT mention any "
+        "on-screen words, captions, signage, logos, or UI at all."
+    ),
+    "minimal": (
+        "Avoid prominent on-screen text, captions, titles, logos, or UI. "
+        "Incidental, out-of-focus background signage may exist but must not be "
+        "a focal point. Do not write any Korean/non-Latin words into the scene."
+    ),
+    "moderate": (
+        "Short, clear Latin words, numbers, or natural signage may appear when "
+        "they fit the scene. Avoid garbled lettering and do not write Korean or "
+        "other non-Latin scripts (those are added in post-production)."
+    ),
+    "full": (
+        "On-screen text is allowed wherever it serves the ad; describe it "
+        "naturally as part of the scene."
+    ),
+}
 
 
 class OpenAILLM:
@@ -194,6 +217,7 @@ class OpenAILLM:
         resolution: str = "1080p",
         duration_sec: float = 6.0,
         language: str = "ko",
+        text_exposure: str = "minimal",
     ) -> str:
         """
         사용자 입력 프롬프트를 대상 비디오 모델에 적합한 생성 프롬프트로
@@ -203,12 +227,19 @@ class OpenAILLM:
         원본을 그대로 돌려준다(호출자에서 추가 폴백 가능).
         """
         model_family = _video_model_family(model)
-        language_name = _LANGUAGE_NAMES.get(language, language or "Korean")
+        lang_code = _normalize_language(language)
+        language_name = _LANGUAGE_NAMES.get(lang_code, "Korean")
+        text_policy = (text_exposure or "minimal").strip().lower()
+        text_policy_rule = _TEXT_POLICY_RULES.get(
+            text_policy, _TEXT_POLICY_RULES["minimal"]
+        )
         system = _ENHANCE_SYSTEM.format(
             duration=float(duration_sec),
             aspect_ratio=aspect_ratio,
             language_name=language_name,
             model_family=model_family,
+            text_policy=text_policy,
+            text_policy_rule=text_policy_rule,
         )
         resp = await self.client.chat.completions.create(
             model=self.model,
@@ -240,6 +271,23 @@ _LANGUAGE_NAMES = {
 }
 
 
+_LANGUAGE_ALIASES = {
+    "korean": "ko", "english": "en", "japanese": "ja", "chinese": "zh",
+    "spanish": "es", "french": "fr", "german": "de", "vietnamese": "vi",
+}
+
+
+def _normalize_language(value: str | None) -> str:
+    """대사/내레이션 언어 정규화. 비거나 모르면 'ko'(한국인 대상)."""
+    if not value or not str(value).strip():
+        return "ko"
+    v = str(value).strip().lower().replace("_", "-")
+    base = v.split("-", 1)[0]
+    if base in _LANGUAGE_NAMES:
+        return base
+    return _LANGUAGE_ALIASES.get(base, base or "ko")
+
+
 def _video_model_family(model: str) -> str:
     """비디오 백엔드 이름에서 모델 패밀리 라벨을 유추한다(프롬프트 튜닝용)."""
     name = (model or "").lower()
@@ -250,3 +298,57 @@ def _video_model_family(model: str) -> str:
     if name.startswith("ltx"):
         return "Lightricks LTX"
     return "generic text-to-video"
+
+
+# ---------------------------------------------------------------------- #
+# 로고 아웃트로 배경색 추천 (요청 시점에 LLM 이 추천, 실패 시 폴백)
+# ---------------------------------------------------------------------- #
+import re as _re
+
+_HEX_RE = _re.compile(r"#?[0-9A-Fa-f]{6}")
+
+_OUTRO_BG_SYSTEM = (
+    "You are a brand designer. Given an ad's context, pick ONE background "
+    "color for a clean logo end-card (outro). It should be on-brand, "
+    "uncluttered, and provide good contrast for a centered logo. "
+    "Respond with ONLY a single hex color like #134A8E. No other text."
+)
+
+
+async def recommend_outro_background(
+    settings, context: str, brand: str = "", fallback: str = "#134A8E"
+) -> str:
+    """
+    아웃트로 배경색을 OpenAI 기본 모델로 추천받아 '#RRGGBB' 로 반환한다.
+    OPENAI_API_KEY 가 없거나 호출/형식 오류면 fallback 을 반환한다(비치명).
+    """
+    fallback = fallback if _HEX_RE.fullmatch((fallback or "").strip()) else "#134A8E"
+    if not getattr(settings, "openai_api_key", ""):
+        return fallback
+    try:
+        from openai import AsyncOpenAI
+
+        client = AsyncOpenAI(api_key=settings.openai_api_key)
+        user = (
+            f"Brand: {brand or 'JB Financial Group'}\n"
+            f"Ad context: {context.strip()[:1500]}\n"
+            "Background hex color for the logo end-card:"
+        )
+        resp = await client.chat.completions.create(
+            model=settings.openai_llm_model,
+            messages=[
+                {"role": "system", "content": _OUTRO_BG_SYSTEM},
+                {"role": "user", "content": user},
+            ],
+        )
+        text = (resp.choices[0].message.content or "").strip()
+        m = _HEX_RE.search(text)
+        if not m:
+            return fallback
+        hex_v = m.group(0)
+        if not hex_v.startswith("#"):
+            hex_v = "#" + hex_v
+        return hex_v.upper()
+    except Exception:  # noqa: BLE001 - 추천 실패는 비치명(폴백)
+        logger.warning("아웃트로 배경색 추천 실패 → 폴백 사용", exc_info=True)
+        return fallback

@@ -72,7 +72,10 @@ curl -H "X-App-Key: dev-key-change-me" localhost:8000/v1/models
 curl -X POST localhost:8000/v1/videos/message \
   -H "X-App-Key: dev-key-change-me" -H "Content-Type: application/json" \
   -d '{"prompt": "노을 지는 해변, 잔잔한 파도 소리", "model": "ltx-2.3",
-       "duration_sec": 8, "aspect_ratio": "16:9", "enhance_prompt": true}'
+       "duration_sec": 8, "aspect_ratio": "16:9",
+       "enhance_prompt": true, "language": "ko"}'
+# language: 대사/내레이션 언어(미지정 시 한국어 ko). 화면 묘사는 항상 영어로 생성되고
+#           이 값은 보이스오버 발화 언어와 프롬프트 변환에만 적용된다. ko-KR/korean 표기도 허용.
 
 # PDF 기획서 모드 (+선택: 로고 오버레이)
 curl -X POST localhost:8000/v1/videos/pdf \
@@ -166,5 +169,37 @@ curl -s -X POST localhost:8000/v2/ads/abc123/proposal -H "X-App-Key: $KEY"
 ```
 
 ## 설계 결정 (주의점 대응)
+
+**로고 아웃트로(logo_outro).** 광고 마지막에 로고 엔드카드(브랜드 색 배경 위
+중앙 로고, 페이드 인/아웃)를 붙인다. 후처리이므로 Sora/Veo/LTX/Wan 등 모든
+모델 결과물에 동일 적용된다. 기본은 옵션(요청 `logo_outro=true`, 서버
+`LOGO_OUTRO_ENABLED`)이며 길이는 `LOGO_OUTRO_DURATION_SEC`(기본 2.5초).
+배경색은 요청 시점에 OpenAI 모델이 캠페인 맥락에 맞춰 추천하고, 키가 없거나
+실패하면 `LOGO_OUTRO_BG_DEFAULT`(브랜드 네이비)로 폴백한다. 로고는 업로드/지정
+로고 > `logos/` 기본 파일 순으로 선택하며, 로고가 없으면 아웃트로를 생략한다.
+`/v1/videos/*` 와 `/v2/ads` 모두 지원.
+
+**글자 노출 단계(text_exposure).** 글자를 완전히 없애면 광고가 어색해지므로,
+모델이 직접 그리는 글자의 허용 수준을 4단계로 조절한다(요청 `text_exposure`,
+서버 기본 `TEXT_EXPOSURE_DEFAULT`=minimal):
+`none`(완전 금지) · `minimal`(배경 간판 등 환경 텍스트만, 기본) ·
+`moderate`(짧은 라틴 글자/숫자 허용) · `full`(제한 없음). 모든 단계에서 한글 등
+비라틴은 모델이 그리지 않게 억제하며(full 제외), 또렷한 한글 카피·자막·로고는
+후처리(자막 번인/오버레이, 실폰트)로 입히는 것을 권장한다. `/v1/videos/*` 와
+`/v2/ads` 의 비디오 백엔드(Sora/Veo/LTX/Wan) 전 경로에 일괄 적용된다.
+
+**글자 깨짐 방지 (text-rendering guardrail).** AI 비디오 모델(Sora/Veo/LTX)은
+화면 글자, 특히 한글을 거의 항상 깨뜨린다. 이를 원천 차단하기 위해:
+- 모든 생성 프롬프트에 "화면 텍스트/자막/워터마크/로고 금지" 클로즈를 자동 부착
+  (`app/backends/base.py` 의 `with_no_text_clause`), 백엔드 경계에서 적용되므로
+  `/v1/videos/*` 와 `/v2/ads` 의 모든 생성 경로에 일괄 적용된다.
+- Veo·LTX 에는 `negative_prompt` 로 텍스트 관련 금지어(`NO_TEXT_NEGATIVE`)를 전달.
+  Sora 는 해당 파라미터가 없어 긍정 프롬프트 클로즈로 대체한다.
+- 화면에 꼭 필요한 문구는 모델이 그리지 않고 **후처리 자막(SRT 번인)**으로 표시하며,
+  `burn_subtitles` 가 한글 폰트(FontName+fontsdir)를 명시해 깨짐 없이 굽는다
+  (`SUBTITLE_FONT_PATH` 로 폰트 지정 가능, 미지정 시 맑은고딕/나눔/Noto CJK 자동 탐색).
+- 내레이션 대사는 '음성'이므로 영향이 없으나, 화면 글자로 새지 않도록 negative prompt 가
+  함께 억제한다.
+
 
 - **씬 길이 

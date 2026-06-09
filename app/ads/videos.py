@@ -26,7 +26,12 @@ from typing import Optional
 
 from ..backends import ClipSpec, VideoBackend
 from ..config import Settings
-from ..pipeline.postprocess import PostprocessError, concat_clips
+from ..pipeline.postprocess import (
+    PostprocessError,
+    append_outro,
+    concat_clips,
+    make_logo_outro,
+)
 from .prompts import build_video_prompt
 from .schemas import AdStoryboard, AdStoryboardOptions, CutAsset
 
@@ -50,6 +55,9 @@ async def run_videos_stage(
     options: AdStoryboardOptions,
     image_paths: dict[int, Path],
     out_dir: Path,
+    text_exposure: str = "minimal",
+    logo_outro: bool = False,
+    logo_path: Optional[Path] = None,
 ) -> tuple[list[CutAsset], Optional[str]]:
     """
     컷별 비디오를 생성하고 최종 결합본을 만든다.
@@ -96,6 +104,7 @@ async def run_videos_stage(
             generate_audio=True,
             index=cut.cut,
             first_frame=Path(image_path),
+            text_exposure=text_exposure,
         )
         gen_seconds = backend.normalize_duration(spec.duration_sec)
         out_path = out_dir / f"cut_{cut.cut:02d}.mp4"
@@ -157,6 +166,36 @@ async def run_videos_stage(
             await asyncio.to_thread(concat_clips, clip_paths, merged)
             final_path = str(merged)
             logger.info("[ads/videos] ✓ 최종 결합 완료 → %s", merged.name)
+            # 로고 아웃트로(엔드카드) — opt-in. 모든 모델 공통 후처리.
+            if logo_outro and logo_path and Path(logo_path).exists():
+                try:
+                    from ..llm.openai_llm import recommend_outro_background
+
+                    context = " / ".join(
+                        x for x in [storyboard.project, storyboard.concept] if x
+                    ) or "advertisement"
+                    bg = await recommend_outro_background(
+                        settings, context, brand=storyboard.logo or "",
+                        fallback=settings.logo_outro_bg_default,
+                    )
+                    outro = out_dir / "outro.mp4"
+                    await asyncio.to_thread(
+                        make_logo_outro,
+                        Path(logo_path), merged, outro,
+                        settings.logo_outro_duration_sec, bg,
+                        settings.logo_outro_fade_sec,
+                        settings.logo_outro_scale_ratio,
+                    )
+                    with_outro = out_dir / "final_outro.mp4"
+                    await asyncio.to_thread(
+                        append_outro, merged, outro, with_outro
+                    )
+                    final_path = str(with_outro)
+                    logger.info("[ads/videos] ✓ 로고 아웃트로 추가(배경 %s)", bg)
+                except Exception as exc:  # noqa: BLE001 - 비치명
+                    logger.warning(
+                        "[ads/videos] 아웃트로 추가 실패(본편 유지): %s", exc
+                    )
         except PostprocessError as exc:
             # 클립은 모두 완성됐으므로 결합 실패는 부분 성공으로 처리한다.
             logger.warning(

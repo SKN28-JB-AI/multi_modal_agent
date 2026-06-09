@@ -24,10 +24,11 @@ class EnhanceLLM:
 
     async def enhance_video_prompt(self, prompt, *, model, aspect_ratio="16:9",
                                    resolution="1080p", duration_sec=6.0,
-                                   language="ko"):
+                                   language="ko", text_exposure="minimal"):
         EnhanceLLM.captured.append(
             {"prompt": prompt, "model": model, "aspect_ratio": aspect_ratio,
-             "resolution": resolution, "duration_sec": duration_sec}
+             "resolution": resolution, "duration_sec": duration_sec,
+             "language": language, "text_exposure": text_exposure}
         )
         return f"[ENHANCED:{model}] cinematic {prompt}"
 
@@ -124,3 +125,62 @@ def test_enhance_skipped_without_openai_key(make_client, monkeypatch):
     assert body["status"] == "completed"
     assert _scene0_prompt(body) == "a calm beach at sunset"
     assert EnhanceLLM.captured == []
+
+
+def test_enhance_defaults_to_korean_when_unspecified(make_client, monkeypatch):
+    """language 미지정 → 한국인 대상(ko)으로 변환된다."""
+    EnhanceLLM.captured = []
+    client = make_client()
+    monkeypatch.setattr(orch, "get_llm", lambda settings: EnhanceLLM())
+
+    resp = _post(client)   # language 미포함
+    body = wait_for_job(client, resp.json()["job_id"])
+    assert body["status"] == "completed"
+    assert EnhanceLLM.captured[0]["language"] == "ko"
+
+
+def test_enhance_respects_explicit_language(make_client, monkeypatch):
+    EnhanceLLM.captured = []
+    client = make_client()
+    monkeypatch.setattr(orch, "get_llm", lambda settings: EnhanceLLM())
+
+    resp = _post(client, language="en")
+    body = wait_for_job(client, resp.json()["job_id"])
+    assert body["status"] == "completed"
+    assert EnhanceLLM.captured[0]["language"] == "en"
+
+
+def test_enhance_normalizes_language_tag(make_client, monkeypatch):
+    """'ko-KR' / 'Japanese' 같은 표기도 코드로 정규화되어 전달된다."""
+    EnhanceLLM.captured = []
+    client = make_client()
+    monkeypatch.setattr(orch, "get_llm", lambda settings: EnhanceLLM())
+
+    assert _post(client, language="ko-KR").status_code == 202
+    assert _post(client, language="Japanese").status_code == 202
+    # 두 잡 모두 끝날 때까지 대기
+    import time
+    time.sleep(0.5)
+    langs = [c["language"] for c in EnhanceLLM.captured]
+    assert "ko" in langs and "ja" in langs
+
+
+def test_enhance_receives_text_exposure_default_minimal(make_client, monkeypatch):
+    """text_exposure 미지정 → 서버 기본값(minimal)이 변환에 전달된다."""
+    EnhanceLLM.captured = []
+    client = make_client()
+    monkeypatch.setattr(orch, "get_llm", lambda settings: EnhanceLLM())
+    resp = _post(client)
+    body = wait_for_job(client, resp.json()["job_id"])
+    assert body["status"] == "completed"
+    assert EnhanceLLM.captured[0]["text_exposure"] == "minimal"
+
+
+def test_enhance_receives_explicit_text_exposure(make_client, monkeypatch):
+    EnhanceLLM.captured = []
+    client = make_client()
+    monkeypatch.setattr(orch, "get_llm", lambda settings: EnhanceLLM())
+    resp = _post(client, text_exposure="none")
+    body = wait_for_job(client, resp.json()["job_id"])
+    assert body["status"] == "completed"
+    assert EnhanceLLM.captured[0]["text_exposure"] == "none"
