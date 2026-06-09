@@ -12,14 +12,17 @@
 </p>
 
 <!--
-  [선택] GitHub 에서 '인라인 자동 플레이어'로 띄우려면 아래 절대 raw URL <video> 를
-  쓰세요. OWNER/REPO/BRANCH 와 경로를 본인 저장소 값으로 바꾼 뒤 이 주석을 해제하면
-  됩니다(레포 루트가 multi_modal_agent 면 경로에서 'multi_modal_agent/' 를 빼세요):
+  참고(GitHub 동작): 커밋된 mp4 를 상대경로나 raw URL <video> 로 가리켜도
+  GitHub README 는 인라인 플레이어로 '재생'하지 않습니다. 그래서 위처럼
+  '포스터 이미지 + 링크' 로 처리했고, 클릭하면 GitHub 가 title.mp4 페이지를 열어
+  플레이어를 보여줍니다(이미지는 상대경로로 항상 렌더되므로 가장 안전).
 
-  <p align="center">
-    <video src="https://github.com/OWNER/REPO/raw/BRANCH/multi_modal_agent/title.mp4"
-           controls muted playsinline width="760"></video>
-  </p>
+  본문에서 곧바로 재생되는 '인라인 mp4 플레이어' 가 꼭 필요하면, 이 방법만 됩니다:
+  github.com 의 README 편집 화면에 title.mp4 를 드래그&드롭 → GitHub 가
+  https://github.com/user-attachments/assets/<해시> URL 을 자동 생성해 플레이어로
+  박아 줍니다(무료 10MB / 유료 100MB 한도). 그 URL 을 아래처럼 넣으면 됩니다:
+
+  https://github.com/user-attachments/assets/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 -->
 
 광고용 멀티모달 동영상 생성 백엔드 서비스 (FastAPI).
