@@ -4,7 +4,7 @@
      이미지/영상은 상대경로라 레포 주소와 무관하며, 두 파일을 이 README 와 같은
      위치에 함께 커밋해야 합니다. -->
 <p align="center">
-https://github.com/user-attachments/assets/5671e1a9-97ed-4ab6-a128-44a056712e23
+![예시 영상](https://github.com/user-attachments/assets/5671e1a9-97ed-4ab6-a128-44a056712e23)
 </p>
 
 <!--
