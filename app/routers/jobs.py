@@ -22,7 +22,8 @@ from ..schemas import (
     JobCreatedResponse, JobStatusResponse, RemixRequest, SceneStateOut,
 )
 from ..coupons import require_video_coupon
-from ..security import require_auth
+from ..auth import Principal
+from ..security import require_auth, requester_of
 from ..timeutil import iso_duration_sec
 
 router = APIRouter(
@@ -35,6 +36,7 @@ def _to_response(job: Job) -> JobStatusResponse:
         job_id=job.id,
         mode=job.mode,
         model=job.model,
+        requested_by=job.requested_by,
         status=job.status.value,
         progress=round(job.progress, 3),
         error=job.error,
@@ -94,7 +96,12 @@ async def download_video(request: Request, job_id: str):
 @router.post("/{job_id}/remix", response_model=JobCreatedResponse,
              status_code=202,
              dependencies=[Depends(require_video_coupon)])  # 영상 쿠폰 1개 차감
-async def remix_job(request: Request, job_id: str, body: RemixRequest):
+async def remix_job(
+    request: Request,
+    job_id: str,
+    body: RemixRequest,
+    principal: Principal = Depends(require_auth),  # 요청당 1회 캐시됨
+):
     """
     완료된 잡의 특정 씬을 프롬프트로 부분 수정(remix)한다.
     새 잡(mode="remix")이 만들어지며, 수정된 씬 + 나머지 원본 씬을
@@ -143,6 +150,7 @@ async def remix_job(request: Request, job_id: str, body: RemixRequest):
 
     manager = request.app.state.job_manager
     orchestrator = request.app.state.orchestrator
+    requested_by, requested_by_id = requester_of(principal)
     job = manager.create(
         mode="remix", model=source.model,
         request={
@@ -150,6 +158,7 @@ async def remix_job(request: Request, job_id: str, body: RemixRequest):
             "scene_index": body.scene_index,
             "prompt": body.prompt,
         },
+        requested_by=requested_by, requested_by_id=requested_by_id,
     )
     manager.start(
         job,

@@ -37,9 +37,15 @@ class JobManager:
     # ------------------------------------------------------------------ #
     # 조회/생성
     # ------------------------------------------------------------------ #
-    def create(self, mode: str, model: str, request: dict) -> Job:
+    def create(
+        self, mode: str, model: str, request: dict,
+        requested_by: str | None = None, requested_by_id: str | None = None,
+    ) -> Job:
         job_id = uuid.uuid4().hex[:12]
-        job = Job(id=job_id, mode=mode, model=model, request=request)
+        job = Job(
+            id=job_id, mode=mode, model=model, request=request,
+            requested_by=requested_by, requested_by_id=requested_by_id,
+        )
         self._jobs[job_id] = job
         self.job_dir(job_id).mkdir(parents=True, exist_ok=True)
         self.persist(job)

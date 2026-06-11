@@ -167,6 +167,7 @@ class JobStatusResponse(BaseModel):
     job_id: str
     mode: str
     model: str
+    requested_by: Optional[str] = None  # 요청자 표시 이름(없으면 미표시)
     status: str
     progress: float = Field(ge=0.0, le=1.0)
     error: Optional[str] = None

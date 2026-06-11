@@ -191,6 +191,9 @@ class AdJob(BaseModel):
     id: str
     prompt: str
     options: AdStoryboardOptions = Field(default_factory=AdStoryboardOptions)
+    # 요청자(감사/표시용). JWT 인증 시 기록, 없으면 None(프론트 미표시).
+    requested_by: Optional[str] = None      # 표시 이름(username)
+    requested_by_id: Optional[str] = None   # auth-server user id(sub)
     created_at: str = Field(default_factory=_now_iso)
     updated_at: str = Field(default_factory=_now_iso)
 
@@ -260,6 +263,7 @@ class AdJobStatusResponse(BaseModel):
     job_id: str
     prompt: str
     options: AdStoryboardOptions
+    requested_by: Optional[str] = None   # 요청자 표시 이름(없으면 미표시)
     image_model: Optional[str] = None
     video_model: Optional[str] = None
     stages: dict[str, StageStateOut]

@@ -56,6 +56,10 @@ class Job(BaseModel):
     # 스토리보드 씬별 실제(또는 스케일된) 길이 — SRT/remix 재계산용
     scene_durations: Optional[list[float]] = None
     request: dict = Field(default_factory=dict)   # 원 요청 기록(감사/디버깅)
+    # 요청자(감사/표시용). JWT 인증 시 기록되며, 앱 키 호출 등
+    # 사용자 정보가 없으면 None 으로 남는다(프론트 미표시).
+    requested_by: Optional[str] = None      # 표시 이름(username)
+    requested_by_id: Optional[str] = None   # auth-server user id(sub)
     created_at: str = Field(default_factory=_now)
     updated_at: str = Field(default_factory=_now)
     # 처리 시작/종료 시각 — 상태 전이 시 JobManager 가 기록

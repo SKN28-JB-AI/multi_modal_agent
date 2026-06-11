@@ -38,9 +38,15 @@ class AdJobManager:
     # ------------------------------------------------------------------ #
     # 조회/생성
     # ------------------------------------------------------------------ #
-    def create(self, prompt: str, options) -> AdJob:
+    def create(
+        self, prompt: str, options,
+        requested_by: str | None = None, requested_by_id: str | None = None,
+    ) -> AdJob:
         job_id = uuid.uuid4().hex[:12]
-        job = AdJob(id=job_id, prompt=prompt, options=options)
+        job = AdJob(
+            id=job_id, prompt=prompt, options=options,
+            requested_by=requested_by, requested_by_id=requested_by_id,
+        )
         self._jobs[job_id] = job
         self.job_dir(job_id).mkdir(parents=True, exist_ok=True)
         self.persist(job)

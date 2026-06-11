@@ -64,7 +64,8 @@ from ..backends import (
 )
 from .logos import resolve_logo
 from ..coupons import require_ad_coupon
-from ..security import require_auth
+from ..auth import Principal
+from ..security import require_auth, requester_of
 from ..timeutil import iso_duration_sec
 
 logger = logging.getLogger(__name__)
@@ -174,7 +175,11 @@ async def list_image_models(request: Request):
 # ====================================================================== #
 @router.post("/storyboards", response_model=AdJobAccepted, status_code=202,
              dependencies=[Depends(require_ad_coupon)])  # 광고 쿠폰 1개 차감
-async def create_storyboard(request: Request, body: AdStoryboardRequest):
+async def create_storyboard(
+    request: Request,
+    body: AdStoryboardRequest,
+    principal: Principal = Depends(require_auth),  # 요청당 1회 캐시됨
+):
     """프롬프트로 스토리보드 JSON 을 생성한다(잡 생성, 202 + 폴링)."""
     settings = request.app.state.settings
     if not settings.openai_api_key:
@@ -184,7 +189,11 @@ async def create_storyboard(request: Request, body: AdStoryboardRequest):
         )
 
     manager = _manager(request)
-    job = manager.create(prompt=body.prompt, options=body.options)
+    requested_by, requested_by_id = requester_of(principal)
+    job = manager.create(
+        prompt=body.prompt, options=body.options,
+        requested_by=requested_by, requested_by_id=requested_by_id,
+    )
     manager.begin_stage(job, "storyboard")
 
     async def _run() -> None:
@@ -403,6 +412,7 @@ def _status_response(job: AdJob) -> AdJobStatusResponse:
         job_id=job.id,
         prompt=job.prompt,
         options=job.options,
+        requested_by=job.requested_by,
         image_model=job.image_model,
         video_model=job.video_model,
         stages={

@@ -31,7 +31,8 @@ from ..pipeline.orchestrator import Orchestrator
 from .logos import resolve_logo
 from ..schemas import JobCreatedResponse, MessageRequest, PdfJobOptions
 from ..coupons import require_video_coupon
-from ..security import require_auth
+from ..auth import Principal
+from ..security import require_auth, requester_of
 
 router = APIRouter(prefix="/v1/videos", tags=["videos"])
 
@@ -65,7 +66,11 @@ def _validate_model(request: Request, model: str) -> VideoBackend:
     status_code=202,
     dependencies=[Depends(require_video_coupon)],  # 인증 + 영상 쿠폰 1개 차감
 )
-async def create_message_job(request: Request, body: MessageRequest):
+async def create_message_job(
+    request: Request,
+    body: MessageRequest,
+    principal: Principal = Depends(require_auth),  # 요청당 1회 캐시됨
+):
     backend = _validate_model(request, body.model)
 
     # 모델별 길이 제한 검증: 지원 범위(min~max)를 벗어나면 422.
@@ -79,8 +84,10 @@ async def create_message_job(request: Request, body: MessageRequest):
     manager = request.app.state.job_manager
     orchestrator: Orchestrator = request.app.state.orchestrator
 
+    requested_by, requested_by_id = requester_of(principal)
     job = manager.create(
-        mode="message", model=body.model, request=body.model_dump()
+        mode="message", model=body.model, request=body.model_dump(),
+        requested_by=requested_by, requested_by_id=requested_by_id,
     )
     manager.start(job, lambda: orchestrator.run_message_job(job))
     return JobCreatedResponse(job_id=job.id, status=job.status.value)
@@ -105,6 +112,7 @@ async def create_pdf_job(
     logo: Optional[UploadFile] = File(
         default=None, description="오버레이할 로고 PNG(선택)"
     ),
+    principal: Principal = Depends(require_auth),  # 요청당 1회 캐시됨
 ):
     _validate_model(request, model)
 
@@ -140,9 +148,11 @@ async def create_pdf_job(
     manager = request.app.state.job_manager
     orchestrator: Orchestrator = request.app.state.orchestrator
 
+    requested_by, requested_by_id = requester_of(principal)
     job = manager.create(
         mode="pdf", model=model,
         request={"filename": file.filename, "options": opts.model_dump()},
+        requested_by=requested_by, requested_by_id=requested_by_id,
     )
     job_dir = manager.job_dir(job.id)
     pdf_path = job_dir / "input.pdf"

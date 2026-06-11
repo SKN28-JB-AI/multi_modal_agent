@@ -23,6 +23,18 @@ from fastapi import Header, HTTPException, Request
 from .auth import AuthError, Principal
 
 
+def requester_of(principal: Principal) -> tuple[Optional[str], Optional[str]]:
+    """
+    Principal 에서 잡 기록용 (표시이름, 사용자ID) 를 뽑는다.
+
+    JWT 인증 사용자만 기록하며, 앱 키 호출(서비스간/스크립트)은
+    사용자 정보가 없으므로 (None, None) — 프론트에는 표시되지 않는다.
+    """
+    if principal.auth_method != "jwt":
+        return None, None
+    return principal.username or None, principal.subject or None
+
+
 def _app_key_principal() -> Principal:
     """검증된 정적 앱 키 호출자(스코프 'api' 부여)."""
     return Principal(
