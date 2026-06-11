@@ -69,10 +69,6 @@ class WanBackend(VideoBackend):
         return bool(settings.dashscope_api_key)
 
     # ------------------------------------------------------------------ #
-    def normalize_duration(self, requested: float) -> float:
-        durations = self.params.get("supported_durations") or self.supported_durations
-        return min(durations, key=lambda d: abs(d - requested))
-
     def _allowed_tiers(self) -> tuple[str, ...]:
         return tuple(
             t.lower() for t in (self.params.get("resolutions") or _TIER_ORDER)

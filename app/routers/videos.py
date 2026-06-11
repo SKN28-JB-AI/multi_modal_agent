@@ -20,7 +20,13 @@ from fastapi import (
 )
 from pydantic import ValidationError
 
-from ..backends import BackendNotConfigured, available_models, get_backend
+from ..backends import (
+    BackendNotConfigured,
+    DurationOutOfRange,
+    VideoBackend,
+    available_models,
+    get_backend,
+)
 from ..pipeline.orchestrator import Orchestrator
 from .logos import resolve_logo
 from ..schemas import JobCreatedResponse, MessageRequest, PdfJobOptions
@@ -33,11 +39,11 @@ MAX_PDF_BYTES = 30 * 1024 * 1024   # 30MB
 MAX_LOGO_BYTES = 5 * 1024 * 1024   # 5MB
 
 
-def _validate_model(request: Request, model: str) -> None:
-    """모델 이름 검증 + 키 설정 여부 확인. 실패 시 4xx/503."""
+def _validate_model(request: Request, model: str) -> VideoBackend:
+    """모델 이름 검증 + 키 설정 여부 확인. 실패 시 4xx/503. 성공 시 백엔드 반환."""
     settings = request.app.state.settings
     try:
-        get_backend(model, settings)
+        return get_backend(model, settings)
     except KeyError:
         raise HTTPException(
             status_code=422,
@@ -60,7 +66,15 @@ def _validate_model(request: Request, model: str) -> None:
     dependencies=[Depends(require_video_coupon)],  # 인증 + 영상 쿠폰 1개 차감
 )
 async def create_message_job(request: Request, body: MessageRequest):
-    _validate_model(request, body.model)
+    backend = _validate_model(request, body.model)
+
+    # 모델별 길이 제한 검증: 지원 범위(min~max)를 벗어나면 422.
+    # (범위 내 비지원 값은 normalize_duration 으로 보정되므로 통과)
+    if body.duration_sec is not None:
+        try:
+            backend.validate_duration(body.duration_sec)
+        except DurationOutOfRange as exc:
+            raise HTTPException(status_code=422, detail=f"모델 '{body.model}': {exc}")
 
     manager = request.app.state.job_manager
     orchestrator: Orchestrator = request.app.state.orchestrator

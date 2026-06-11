@@ -49,7 +49,9 @@ def make_test_clip(out_path: Path, seconds: float = 2.0,
 class MockBackend(VideoBackend):
     provider = "test"
     description = "테스트용 mock 백엔드"
-    supported_durations = (2.0,)
+    # 2~4초 지원: 기존 테스트들이 duration_sec=4.0 을 보내므로 4 를 포함하고,
+    # 길이 제한(422) 테스트를 위해 최대를 4초로 둔다.
+    supported_durations = (2.0, 4.0)
     supports_remix = True
 
     # 테스트에서 전달된 프롬프트를 검증할 수 있도록 캐처
@@ -129,6 +131,8 @@ def make_client(tmp_path, monkeypatch):
     def _make(**overrides) -> TestClient:
         MockBackend.captured_prompts = []
         backends.register("mock", MockBackend)
+        # 2초만 지원하는 변형: 길이 보정(normalize) 동작 검증용
+        backends.register("mock-2s", MockBackend, supported_durations=(2.0,))
         backends.register("mock-fail", FailingBackend)
         backends.register("mock-noremix", NoRemixBackend)
 
@@ -155,6 +159,7 @@ def make_client(tmp_path, monkeypatch):
     for c in clients:
         c.__exit__(None, None, None)
     backends.unregister("mock")
+    backends.unregister("mock-2s")
     backends.unregister("mock-fail")
     backends.unregister("mock-noremix")
 

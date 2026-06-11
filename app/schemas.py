@@ -30,7 +30,7 @@ TextExposure = Literal["none", "minimal", "moderate", "full"]
 class Scene(BaseModel):
     index: int = Field(ge=0)
     prompt: str = Field(min_length=1, description="영상 생성 프롬프트(영어 권장)")
-    duration_sec: float = Field(default=6.0, ge=2.0, le=20.0)
+    duration_sec: float = Field(default=8.0, ge=2.0, le=20.0)
     audio_description: str = Field(default="", description="효과음/배경음 묘사")
     narration: str = Field(
         default="",
@@ -85,7 +85,11 @@ class MessageRequest(GenerationOptions):
     model: str = Field(description="사용할 비디오 백엔드 이름 (GET /v1/models 참고)")
     duration_sec: Optional[float] = Field(
         default=None, ge=2.0, le=20.0,
-        description="클립 길이(초). 백엔드 지원 값으로 자동 보정됨",
+        description=(
+            "클립 길이(초). 미지정 시 기본 8초(모델이 8초 미지원이면 가장 "
+            "가까운 지원값). 모델별 최소/최대 범위를 벗어나면 422, 범위 내 "
+            "비지원 값은 가장 가까운 지원값으로 보정된다."
+        ),
     )
     enhance_prompt: Optional[bool] = Field(
         default=None,
@@ -183,6 +187,9 @@ class BackendInfo(BaseModel):
     description: str
     configured: bool          # 필요한 API 키가 설정되어 있는지
     supported_durations: list[float]
+    min_duration: float       # 지원 최소 길이(초)
+    max_duration: float       # 지원 최대 길이(초)
+    default_duration: float   # 기본 길이(8초를 지원값으로 보정)
     supports_remix: bool = False
     supports_image_input: bool = False
     supports_audio: bool = True

@@ -77,7 +77,10 @@ class Orchestrator:
     # ================================================================== #
     async def run_message_job(self, job: Job) -> None:
         req = job.request
-        duration = req.get("duration_sec") or 6.0
+        # 미지정 시 기본 8초(DEFAULT_DURATION_SEC). 모델이 8초를 지원하지
+        # 않으면 가장 가까운 지원값으로 보정한다.
+        backend = get_backend(job.model, self.settings)
+        duration = req.get("duration_sec") or backend.default_duration()
         # 비디오 생성 전 프롬프트 변환(선행 단계). 실패해도 원본으로 진행.
         prompt = await self._maybe_enhance_prompt(job, duration)
         storyboard = Storyboard(

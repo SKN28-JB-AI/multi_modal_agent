@@ -144,12 +144,17 @@ def merge_negative_prompt(existing: str | None) -> str:
     return negative_prompt_for("none", existing)
 
 
+# 영상 생성 기본 클립 길이(초). 모델이 8초를 지원하지 않으면
+# normalize_duration 으로 가장 가까운 지원값으로 보정해 사용한다.
+DEFAULT_DURATION_SEC = 8.0
+
+
 @dataclass
 class ClipSpec:
     """클립 1개 생성 사양 (백엔드 공통 입력)."""
 
     prompt: str
-    duration_sec: float = 6.0
+    duration_sec: float = DEFAULT_DURATION_SEC
     aspect_ratio: str = "16:9"     # "16:9" | "9:16"
     resolution: str = "1080p"      # "720p" | "1080p"
     generate_audio: bool = True
@@ -177,6 +182,10 @@ class BackendNotConfigured(Exception):
 
 class ClipGenerationError(Exception):
     """클립 생성 실패."""
+
+
+class DurationOutOfRange(ValueError):
+    """요청한 클립 길이가 백엔드 지원 범위(min~max)를 벗어남."""
 
 
 class VideoBackend(abc.ABC):
@@ -222,9 +231,39 @@ class VideoBackend(abc.ABC):
         )
 
     # -------------------------------------------------------------- #
+    def instance_durations(self) -> tuple[float, ...]:
+        """이 인스턴스가 실제 지원하는 클립 길이(등록 파라미터 우선)."""
+        durs = self.params.get("supported_durations") or self.supported_durations
+        return tuple(float(d) for d in durs)
+
+    def min_duration(self) -> float:
+        return min(self.instance_durations())
+
+    def max_duration(self) -> float:
+        return max(self.instance_durations())
+
+    def default_duration(self) -> float:
+        """기본 클립 길이: DEFAULT_DURATION_SEC(8초)를 지원값으로 보정한 값."""
+        return self.normalize_duration(DEFAULT_DURATION_SEC)
+
+    def validate_duration(self, requested: float) -> None:
+        """요청 길이가 지원 범위를 벗어나면 DurationOutOfRange 를 던진다.
+
+        범위 안이지만 지원 목록에 정확히 없는 값은 normalize_duration 으로
+        보정되므로 여기서 거부하지 않는다(최소/최대만 강제).
+        """
+        durs = self.instance_durations()
+        lo, hi = min(durs), max(durs)
+        if requested < lo or requested > hi:
+            raise DurationOutOfRange(
+                f"duration_sec={requested:g} 은(는) 지원 범위를 벗어났습니다. "
+                f"지원 길이(초): {', '.join(f'{d:g}' for d in durs)} "
+                f"(최소 {lo:g} / 최대 {hi:g})"
+            )
+
     def normalize_duration(self, requested: float) -> float:
         """요청 길이를 백엔드가 지원하는 가장 가까운 값으로 보정."""
-        return min(self.supported_durations, key=lambda d: abs(d - requested))
+        return min(self.instance_durations(), key=lambda d: abs(d - requested))
 
     def audio_supported(self) -> bool:
         """이 인스턴스가 네이티브 오디오를 생성하는가(등록 파라미터 우선)."""
@@ -280,13 +319,19 @@ def backend_info(settings: Settings) -> list[dict]:
         instance_durations = reg.params.get(
             "supported_durations", cls.supported_durations
         )
+        durs = [float(d) for d in instance_durations]
         infos.append(
             {
                 "name": name,
                 "provider": cls.provider,
                 "description": cls.description,
                 "configured": cls.is_configured(settings),
-                "supported_durations": [float(d) for d in instance_durations],
+                "supported_durations": durs,
+                "min_duration": min(durs),
+                "max_duration": max(durs),
+                "default_duration": min(
+                    durs, key=lambda d: abs(d - DEFAULT_DURATION_SEC)
+                ),
                 "supports_remix": cls.supports_remix,
                 "supports_image_input": cls.supports_image_input,
                 "supports_audio": bool(

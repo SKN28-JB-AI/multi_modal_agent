@@ -79,7 +79,7 @@ def test_scenes_mode_budget_matches_backend_duration(client, tmp_path):
     resp = client.post(
         "/v1/videos/pdf",
         files={"file": ("plan.pdf", pdf.read_bytes(), "application/pdf")},
-        data={"model": "mock", "options": '{"generation_mode": "scenes"}'},
+        data={"model": "mock-2s", "options": '{"generation_mode": "scenes"}'},
         headers=auth_headers(),
     )
     body = wait_for_job(client, resp.json()["job_id"])
