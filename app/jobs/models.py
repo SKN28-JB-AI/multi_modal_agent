@@ -58,6 +58,9 @@ class Job(BaseModel):
     request: dict = Field(default_factory=dict)   # 원 요청 기록(감사/디버깅)
     created_at: str = Field(default_factory=_now)
     updated_at: str = Field(default_factory=_now)
+    # 처리 시작/종료 시각 — 상태 전이 시 JobManager 가 기록
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
 
     def touch(self) -> None:
         self.updated_at = _now()

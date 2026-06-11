@@ -244,6 +244,7 @@ class StageStateOut(BaseModel):
     error: Optional[str] = None
     started_at: Optional[str] = None
     finished_at: Optional[str] = None
+    duration_sec: Optional[float] = None  # 단계 소요시간(초, 종료 시)
 
 
 class CutAssetOut(BaseModel):

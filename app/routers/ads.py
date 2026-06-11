@@ -64,6 +64,7 @@ from ..backends import (
 )
 from .logos import resolve_logo
 from ..security import require_auth
+from ..timeutil import iso_duration_sec
 
 logger = logging.getLogger(__name__)
 
@@ -374,6 +375,17 @@ async def create_proposal(
 # ====================================================================== #
 # 상태/산출물 조회
 # ====================================================================== #
+def _stage_out(st) -> StageStateOut:
+    """단계 상태 → 응답 모델(소요시간 포함)."""
+    return StageStateOut(
+        status=st.status,
+        error=st.error,
+        started_at=st.started_at,
+        finished_at=st.finished_at,
+        duration_sec=iso_duration_sec(st.started_at, st.finished_at),
+    )
+
+
 def _status_response(job: AdJob) -> AdJobStatusResponse:
     base = f"/v2/ads/{job.id}"
 
@@ -392,8 +404,7 @@ def _status_response(job: AdJob) -> AdJobStatusResponse:
         image_model=job.image_model,
         video_model=job.video_model,
         stages={
-            name: StageStateOut(**job.stage(name).model_dump())
-            for name in STAGE_NAMES
+            name: _stage_out(job.stage(name)) for name in STAGE_NAMES
         },
         storyboard=job.storyboard,
         images=[_asset_out(a, "images") for a in job.images],

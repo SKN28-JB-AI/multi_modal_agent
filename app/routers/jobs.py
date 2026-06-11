@@ -22,6 +22,7 @@ from ..schemas import (
     JobCreatedResponse, JobStatusResponse, RemixRequest, SceneStateOut,
 )
 from ..security import require_auth
+from ..timeutil import iso_duration_sec
 
 router = APIRouter(
     prefix="/v1/jobs", tags=["jobs"], dependencies=[Depends(require_auth)]
@@ -50,6 +51,9 @@ def _to_response(job: Job) -> JobStatusResponse:
         ),
         created_at=job.created_at,
         updated_at=job.updated_at,
+        started_at=job.started_at,
+        finished_at=job.finished_at,
+        duration_sec=iso_duration_sec(job.started_at, job.finished_at),
     )
 
 

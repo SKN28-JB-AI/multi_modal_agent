@@ -172,6 +172,9 @@ class JobStatusResponse(BaseModel):
     subtitles_url: Optional[str] = None # SRT 가 생성된 경우
     created_at: str
     updated_at: str
+    started_at: Optional[str] = None    # 처리 시작 시각
+    finished_at: Optional[str] = None   # 완료/실패 시각
+    duration_sec: Optional[float] = None  # 총 소요시간(초, 완료/실패 시)
 
 
 class BackendInfo(BaseModel):

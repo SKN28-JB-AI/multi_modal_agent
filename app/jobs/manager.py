@@ -21,7 +21,7 @@ import uuid
 from pathlib import Path
 from typing import Awaitable, Callable, Optional
 
-from .models import Job, JobStatus
+from .models import Job, JobStatus, _now
 
 logger = logging.getLogger(__name__)
 
@@ -61,8 +61,20 @@ class JobManager:
         """잡 필드를 갱신하고 디스크에 영속화한다."""
         for key, value in fields.items():
             setattr(job, key, value)
+        if "status" in fields:
+            self._track_times(job, fields["status"])
         job.touch()
         self.persist(job)
+
+    @staticmethod
+    def _track_times(job: Job, new_status: JobStatus | str) -> None:
+        """상태 전이 시 처리 시작/종료 시각을 기록한다."""
+        status = JobStatus(new_status)
+        if job.started_at is None and status != JobStatus.QUEUED:
+            job.started_at = _now()
+        if (status in (JobStatus.COMPLETED, JobStatus.FAILED)
+                and job.finished_at is None):
+            job.finished_at = _now()
 
     def persist(self, job: Job) -> None:
         path = self.job_dir(job.id) / "job.json"
@@ -110,6 +122,8 @@ class JobManager:
             if job.status not in (JobStatus.COMPLETED, JobStatus.FAILED):
                 job.status = JobStatus.FAILED
                 job.error = "서버 재시작으로 작업이 중단되었습니다."
+                # 마지막 갱신 시각을 종료 시각으로 간주
+                job.finished_at = job.finished_at or job.updated_at
                 job.touch()
             self._jobs[job.id] = job
             self.persist(job)
