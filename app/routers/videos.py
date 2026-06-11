@@ -24,6 +24,7 @@ from ..backends import BackendNotConfigured, available_models, get_backend
 from ..pipeline.orchestrator import Orchestrator
 from .logos import resolve_logo
 from ..schemas import JobCreatedResponse, MessageRequest, PdfJobOptions
+from ..coupons import require_video_coupon
 from ..security import require_auth
 
 router = APIRouter(prefix="/v1/videos", tags=["videos"])
@@ -56,7 +57,7 @@ def _validate_model(request: Request, model: str) -> None:
     "/message",
     response_model=JobCreatedResponse,
     status_code=202,
-    dependencies=[Depends(require_auth)],
+    dependencies=[Depends(require_video_coupon)],  # 인증 + 영상 쿠폰 1개 차감
 )
 async def create_message_job(request: Request, body: MessageRequest):
     _validate_model(request, body.model)
@@ -78,7 +79,7 @@ async def create_message_job(request: Request, body: MessageRequest):
     "/pdf",
     response_model=JobCreatedResponse,
     status_code=202,
-    dependencies=[Depends(require_auth)],
+    dependencies=[Depends(require_video_coupon)],  # 인증 + 영상 쿠폰 1개 차감
 )
 async def create_pdf_job(
     request: Request,

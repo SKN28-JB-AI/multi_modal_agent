@@ -21,6 +21,7 @@ from ..jobs import Job, JobStatus
 from ..schemas import (
     JobCreatedResponse, JobStatusResponse, RemixRequest, SceneStateOut,
 )
+from ..coupons import require_video_coupon
 from ..security import require_auth
 from ..timeutil import iso_duration_sec
 
@@ -91,7 +92,8 @@ async def download_video(request: Request, job_id: str):
 
 
 @router.post("/{job_id}/remix", response_model=JobCreatedResponse,
-             status_code=202)
+             status_code=202,
+             dependencies=[Depends(require_video_coupon)])  # 영상 쿠폰 1개 차감
 async def remix_job(request: Request, job_id: str, body: RemixRequest):
     """
     완료된 잡의 특정 씬을 프롬프트로 부분 수정(remix)한다.

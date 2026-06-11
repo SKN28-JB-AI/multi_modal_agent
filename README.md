@@ -103,6 +103,20 @@ curl -H "X-App-Key: dev-key-change-me" localhost:8000/v1/models
 
 > 설정: `AUTH_ISSUER`, `JWKS_URL`, `AUTH_REQUIRED_SCOPE`(기본 `api`), `AUTH_AUDIENCE`(선택), `AUTH_LEEWAY_SEC`. (.env.example 참고)
 
+## 쿠폰 (사용 횟수 제한)
+
+JWT 인증 사용자는 auth-server 가 보관하는 잔여 쿠폰을 소모하며 기능을 사용한다.
+
+- **video 쿠폰**: `POST /v1/videos/message`, `POST /v1/videos/pdf`, `POST /v1/jobs/{id}/remix`
+- **ad 쿠폰**: `POST /v2/ads/storyboards` (파이프라인 시작 시 1회)
+
+작업 "생성" 시 사용자 본인의 Bearer 토큰으로 auth-server `/coupons/consume` 을
+호출해 1개 차감한다(작업 실패 시 환불 없음). 잔여 0 이면 **402** 를 반환한다.
+관리자(admin)는 차감 없이 무제한, **X-App-Key 호출(서비스 간)은 쿠폰 미적용**.
+auth-server 에 연결할 수 없으면 503(fail-closed). 구현: `app/coupons.py`.
+
+---
+
 ## 사용 예
 
 ```bash

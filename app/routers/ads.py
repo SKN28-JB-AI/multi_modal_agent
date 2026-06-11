@@ -63,6 +63,7 @@ from ..backends import (
     normalize_text_exposure,
 )
 from .logos import resolve_logo
+from ..coupons import require_ad_coupon
 from ..security import require_auth
 from ..timeutil import iso_duration_sec
 
@@ -171,7 +172,8 @@ async def list_image_models(request: Request):
 # ====================================================================== #
 # 1단계: 스토리보드 생성
 # ====================================================================== #
-@router.post("/storyboards", response_model=AdJobAccepted, status_code=202)
+@router.post("/storyboards", response_model=AdJobAccepted, status_code=202,
+             dependencies=[Depends(require_ad_coupon)])  # 광고 쿠폰 1개 차감
 async def create_storyboard(request: Request, body: AdStoryboardRequest):
     """프롬프트로 스토리보드 JSON 을 생성한다(잡 생성, 202 + 폴링)."""
     settings = request.app.state.settings
