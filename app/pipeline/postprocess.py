@@ -494,6 +494,56 @@ def make_logo_outro(
     _run(cmd, "로고 아웃트로 생성")
 
 
+def make_image_outro(
+    image_path: Path,
+    reference_video: Path,
+    out_path: Path,
+    duration_sec: float = 2.5,
+    fade_sec: float = 0.4,
+) -> None:
+    """
+    스타일화된 엔드카드 이미지(풀프레임)를 아웃트로 영상으로 만든다.
+
+    make_logo_outro 와 동일하게 본편의 해상도/fps/오디오 유무에 맞춰
+    생성해 concat 이 자연스럽도록 한다. 이미지는 프레임을 가득 채우도록
+    cover(확대 후 중앙 crop) 처리한다.
+    """
+    ffmpeg = _ffmpeg()
+    w, h = _video_dimensions(reference_video)
+    with_audio = _has_audio_stream(reference_video)
+    fps = _video_framerate(reference_video)
+    sample_rate = _audio_sample_rate(reference_video)
+    dur = max(0.5, float(duration_sec))
+    fade = max(0.0, min(float(fade_sec), dur / 2))
+
+    vchain = (
+        f"[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,"
+        f"crop={w}:{h},format=yuv420p,fps={fps}"
+    )
+    if fade > 0:
+        vchain += (
+            f",fade=t=in:st=0:d={fade:.2f},"
+            f"fade=t=out:st={max(0.0, dur - fade):.2f}:d={fade:.2f}"
+        )
+    vchain += "[v]"
+
+    cmd = [ffmpeg, "-y", "-loop", "1", "-t", f"{dur:.3f}", "-i", str(image_path)]
+    maps = ["-map", "[v]"]
+    if with_audio:
+        cmd += ["-f", "lavfi", "-i",
+                f"anullsrc=channel_layout=stereo:sample_rate={sample_rate}"]
+        maps += ["-map", "1:a"]
+    cmd += [
+        "-filter_complex", vchain, *maps,
+        "-t", f"{dur:.3f}",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", fps,
+    ]
+    if with_audio:
+        cmd += ["-c:a", "aac", "-shortest"]
+    cmd += [str(out_path)]
+    _run(cmd, "이미지 아웃트로 생성")
+
+
 def append_outro(main_video: Path, outro: Path, output_path: Path) -> None:
     """본편 뒤에 아웃트로를 이어 붙인다(concat, 필요 시 재인코딩)."""
     concat_clips([main_video, outro], output_path)

@@ -156,6 +156,11 @@ class Settings(BaseSettings):
     logo_outro_scale_ratio: float = 0.42   # 로고 폭 = 프레임 폭 × 비율
     # 배경색 폴백(LLM 추천 실패/키 없음 시). JB 브랜드 네이비.
     logo_outro_bg_default: str = "#134A8E"
+    # 아웃트로 스타일화: 이미지 생성 API(OpenAI images.edit)로 지정 로고를
+    # 영상 프롬프트 분위기에 맞는 풀프레임 엔드카드 이미지로 변환한다.
+    # 키 없음/호출 실패 시 기존 '단색 배경 + 로고' 방식으로 폴백(비치명).
+    logo_outro_stylize_enabled: bool = True
+    logo_outro_stylize_model: str = "gpt-image-2"
     # 화면 글자 노출 기본 단계: none / minimal / moderate / full.
     # 요청에서 text_exposure 로 건당 덮어쓸 수 있다.
     text_exposure_default: str = "minimal"

@@ -83,8 +83,7 @@ def test_make_outro_matches_no_audio(tmp_path):
 
 def test_recommend_background_fallback_without_key():
     s = Settings(app_keys="k", openai_api_key="", _env_file=None)
-    r = asyncio.get_event_loop().run_until_complete(
-        openai_llm.recommend_outro_background(s, "beach ad", "JB"))
+    r = asyncio.run(openai_llm.recommend_outro_background(s, "beach ad", "JB"))
     assert r == "#134A8E"
 
 

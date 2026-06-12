@@ -30,7 +30,6 @@ from ..pipeline.postprocess import (
     PostprocessError,
     append_outro,
     concat_clips,
-    make_logo_outro,
 )
 from .prompts import build_video_prompt
 from .schemas import AdStoryboard, AdStoryboardOptions, CutAsset
@@ -172,29 +171,23 @@ async def run_videos_stage(
             # 로고 아웃트로(엔드카드) — opt-in. 모든 모델 공통 후처리.
             if logo_outro and logo_path and Path(logo_path).exists():
                 try:
-                    from ..llm.openai_llm import recommend_outro_background
+                    from ..pipeline.outro import build_outro
 
                     context = " / ".join(
                         x for x in [storyboard.project, storyboard.concept] if x
                     ) or "advertisement"
-                    bg = await recommend_outro_background(
-                        settings, context, brand=storyboard.logo or "",
-                        fallback=settings.logo_outro_bg_default,
-                    )
-                    outro = out_dir / "outro.mp4"
-                    await asyncio.to_thread(
-                        make_logo_outro,
-                        Path(logo_path), merged, outro,
-                        settings.logo_outro_duration_sec, bg,
-                        settings.logo_outro_fade_sec,
-                        settings.logo_outro_scale_ratio,
+                    # 스타일화 엔드카드(광고 분위기 반영) 우선, 실패 시 단색 폴백.
+                    outro = await build_outro(
+                        settings, Path(logo_path), context, merged, out_dir,
+                        aspect_ratio=options.aspect_ratio,
+                        brand=storyboard.logo or "",
                     )
                     with_outro = out_dir / "final_outro.mp4"
                     await asyncio.to_thread(
                         append_outro, merged, outro, with_outro
                     )
                     final_path = str(with_outro)
-                    logger.info("[ads/videos] ✓ 로고 아웃트로 추가(배경 %s)", bg)
+                    logger.info("[ads/videos] ✓ 로고 아웃트로 추가")
                 except Exception as exc:  # noqa: BLE001 - 비치명
                     logger.warning(
                         "[ads/videos] 아웃트로 추가 실패(본편 유지): %s", exc

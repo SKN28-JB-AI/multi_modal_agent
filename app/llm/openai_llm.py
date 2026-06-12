@@ -14,9 +14,12 @@ OpenAI GPT 를 이용한 ① PDF 이해 / ② 스토리보드 변환.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
+from pathlib import Path
+from typing import Optional
 
 from pydantic import ValidationError
 
@@ -315,6 +318,85 @@ _OUTRO_BG_SYSTEM = (
     "uncluttered, and provide good contrast for a centered logo. "
     "Respond with ONLY a single hex color like #134A8E. No other text."
 )
+
+
+# ---------------------------------------------------------------------- #
+# 로고 아웃트로 엔드카드 스타일화 (OpenAI images.edit, 실패 시 None 폴백)
+# ---------------------------------------------------------------------- #
+# images.edit 의 size 인자는 고정 enum(1536x1024/1024x1536/...)이므로
+# 영상 종횡비에 가장 가까운 값을 고른다. 프레임 맞춤은 ffmpeg cover 처리.
+_ENDCARD_SIZE = {"16:9": "1536x1024", "9:16": "1024x1536"}
+
+_ENDCARD_PROMPT = (
+    "Design a polished full-frame brand end-card image for the final shot of a "
+    "video advertisement. Use the provided logo as the centerpiece: keep the "
+    "logo's shape, lettering and colors exactly as given (do not redraw, distort "
+    "or restyle the logo itself), placed prominently near the center at a "
+    "moderate size. Create the background and decorative elements (lighting, "
+    "texture, subtle gradients or motifs) so they match the mood and tone of "
+    "this ad:\n{context}\n"
+    "Clean, uncluttered composition with good contrast behind the logo. "
+    "No additional text, no watermarks, no people."
+)
+
+
+async def stylize_logo_endcard(
+    settings, logo_path: "Path", context: str, out_path: "Path",
+    aspect_ratio: str = "16:9",
+) -> "Optional[Path]":
+    """
+    지정 로고 이미지를 영상 프롬프트 분위기에 맞는 풀프레임 엔드카드로 변환한다.
+
+    OpenAI images.edit(gpt-image 계열, 이미지 입력 + 프롬프트)를 사용하며
+    PNG 를 out_path 에 저장하고 그 경로를 반환한다. 다음의 경우 None 을
+    반환해 호출자가 기존 '단색 배경 + 로고' 방식으로 폴백하게 한다(비치명):
+      - LOGO_OUTRO_STYLIZE_ENABLED=false / OPENAI_API_KEY 미설정
+      - API 호출/응답 형식 오류
+    """
+    if not getattr(settings, "logo_outro_stylize_enabled", True):
+        return None
+    if not getattr(settings, "openai_api_key", ""):
+        return None
+
+    model = getattr(settings, "logo_outro_stylize_model", "") or "gpt-image-2"
+    size = _ENDCARD_SIZE.get(aspect_ratio, "1536x1024")
+    prompt = _ENDCARD_PROMPT.format(context=(context or "advertisement").strip()[:1500])
+
+    def _edit_sync() -> bytes:
+        from openai import OpenAI
+
+        client = OpenAI(api_key=settings.openai_api_key)
+        with open(logo_path, "rb") as fh:
+            try:
+                # input_fidelity=high: 로고 형태/레터링 보존 강화
+                resp = client.images.edit(
+                    model=model, image=fh, prompt=prompt, n=1, size=size,
+                    input_fidelity="high",
+                )
+            except Exception:  # noqa: BLE001 - 미지원 파라미터 등 → 1회 재시도
+                fh.seek(0)
+                resp = client.images.edit(
+                    model=model, image=fh, prompt=prompt, n=1, size=size,
+                )
+        data = getattr(resp, "data", None)
+        if not data:
+            raise RuntimeError("images.edit 응답이 비어 있습니다.")
+        b64 = getattr(data[0], "b64_json", None)
+        if not b64:
+            raise RuntimeError("images.edit 응답에 b64_json 이 없습니다.")
+        import base64 as _b64
+
+        return _b64.b64decode(b64)
+
+    try:
+        raw = await asyncio.to_thread(_edit_sync)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(raw)
+        logger.info("로고 엔드카드 스타일화 완료(model=%s) → %s", model, out_path.name)
+        return out_path
+    except Exception as exc:  # noqa: BLE001 - 스타일화 실패는 비치명(폴백)
+        logger.warning("로고 엔드카드 스타일화 실패 → 단색 배경 폴백: %s", exc)
+        return None
 
 
 async def recommend_outro_background(

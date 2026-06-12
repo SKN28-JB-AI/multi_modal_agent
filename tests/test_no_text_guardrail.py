@@ -120,7 +120,7 @@ def _run_ltx(monkeypatch, spec):
     backend = ltx_mod.LtxBackend(_settings())
     import asyncio
     with pytest.raises(Exception):
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             backend.generate_clip(spec, Path("/tmp/_ltx_out.mp4")))
     return captured["payload"]
 
@@ -172,7 +172,7 @@ def _run_veo(monkeypatch, spec):
     backend = veo_mod.VeoBackend(_settings())
     import asyncio
     with pytest.raises(Exception):
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             backend.generate_clip(spec, Path("/tmp/_veo_out.mp4")))
     return captured
 
@@ -209,7 +209,7 @@ def _run_sora(monkeypatch, spec):
     backend = sora_mod.SoraBackend(_settings(), model="sora-2")
     import asyncio
     with pytest.raises(Exception):
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             backend.generate_clip(spec, Path("/tmp/_sora_out.mp4")))
     return captured
 

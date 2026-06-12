@@ -693,7 +693,7 @@ class Orchestrator:
             return current
 
         try:
-            from ..llm.openai_llm import recommend_outro_background
+            from .outro import build_outro
 
             context = " / ".join(
                 x for x in [
@@ -701,22 +701,17 @@ class Orchestrator:
                     job.request.get("prompt", ""),
                 ] if x
             ) or (storyboard.title or "advertisement")
-            bg = await recommend_outro_background(
-                settings, context, brand="",
-                fallback=settings.logo_outro_bg_default,
-            )
-            outro = self.manager.job_dir(job.id) / "outro.mp4"
-            await asyncio.to_thread(
-                postprocess.make_logo_outro,
-                Path(outro_logo), current, outro,
-                settings.logo_outro_duration_sec, bg,
-                settings.logo_outro_fade_sec, settings.logo_outro_scale_ratio,
+            # 스타일화 엔드카드(영상 분위기 반영) 우선, 실패 시 단색 폴백.
+            outro = await build_outro(
+                settings, Path(outro_logo), context, current,
+                self.manager.job_dir(job.id),
+                aspect_ratio=job.request.get("aspect_ratio") or "16:9",
             )
             combined = self.manager.job_dir(job.id) / "with_outro.mp4"
             await asyncio.to_thread(
                 postprocess.append_outro, current, outro, combined
             )
-            logger.info("잡 %s: 로고 아웃트로 추가(배경 %s)", job.id, bg)
+            logger.info("잡 %s: 로고 아웃트로 추가", job.id)
             return combined
         except Exception as exc:  # noqa: BLE001 - 아웃트로 실패는 비치명
             logger.warning("잡 %s: 아웃트로 추가 실패(본편 유지): %s", job.id, exc)
